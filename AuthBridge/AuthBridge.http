@@ -1,0 +1,6 @@
+@AuthBridge_HostAddress = http://localhost:5001
+
+GET {{AuthBridge_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

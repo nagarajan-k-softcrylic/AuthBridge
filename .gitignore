@@ -1,0 +1,22 @@
+# .NET
+bin/
+obj/
+*.user
+
+# Angular / Node
+AuthBridge/ClientApp/node_modules/
+AuthBridge/ClientApp/.angular/
+AuthBridge/ClientApp/dist/
+npm-debug.log*
+
+# Angular build output copied into wwwroot (generated, not source)
+AuthBridge/wwwroot/
+
+# IDE
+.vs/
+.vscode/
+*.suo
+
+# OS
+.DS_Store
+Thumbs.db
