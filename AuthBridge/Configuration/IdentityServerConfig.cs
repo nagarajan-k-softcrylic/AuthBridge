@@ -33,9 +33,9 @@ public static class IdentityServerConfig
                 RequireClientSecret = false,
                 RequirePkce = true,
 
-                RedirectUris = { "https://localhost:4200/auth-callback" },
-                PostLogoutRedirectUris = { "https://localhost:4200" },
-                AllowedCorsOrigins = { "https://localhost:4200" },
+                RedirectUris = { "http://localhost:4200/auth-callback" },
+                PostLogoutRedirectUris = { "http://localhost:4200" },
+                AllowedCorsOrigins = { "http://localhost:4200" },
 
                 AllowedScopes =
                 {

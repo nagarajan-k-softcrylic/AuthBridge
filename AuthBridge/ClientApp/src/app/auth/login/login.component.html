@@ -1,0 +1,50 @@
+<div class="auth-page">
+  <div class="auth-card">
+    <h1>Welcome Back</h1>
+    <p class="subtitle">Sign in to continue to AuthBridge</p>
+
+    <div class="auth-mode-switch" *ngIf="ssoEnabled">
+      <button type="button" [class.active]="authMode === 'basic'" (click)="switchMode('basic')">
+        Basic Login
+      </button>
+      <button type="button" [class.active]="authMode === 'sso'" (click)="switchMode('sso')">
+        SSO Login
+      </button>
+    </div>
+
+    <form *ngIf="authMode === 'basic'" [formGroup]="form" (ngSubmit)="onSubmit()">
+      <div class="form-group">
+        <label for="email">Email</label>
+        <input id="email" type="email" formControlName="email" placeholder="you@example.com" />
+        <small class="error" *ngIf="form.get('email')?.touched && form.get('email')?.invalid">
+          Enter a valid email address.
+        </small>
+      </div>
+
+      <div class="form-group">
+        <label for="password">Password</label>
+        <input id="password" type="password" formControlName="password" placeholder="••••••••" />
+        <small class="error" *ngIf="form.get('password')?.touched && form.get('password')?.invalid">
+          Password is required.
+        </small>
+      </div>
+
+      <div class="error server-error" *ngIf="errorMessage">{{ errorMessage }}</div>
+
+      <button type="submit" class="btn-primary" [disabled]="submitting">
+        {{ submitting ? 'Signing in...' : 'Sign In' }}
+      </button>
+    </form>
+
+    <div *ngIf="authMode === 'sso'" class="sso-section">
+      <div class="error server-error" *ngIf="errorMessage">{{ errorMessage }}</div>
+      <button type="button" class="btn-primary" (click)="onSsoLogin()">
+        Continue with SSO
+      </button>
+    </div>
+
+    <p class="switch-link" *ngIf="authMode === 'basic'">
+      Don't have an account? <a routerLink="/register">Create one</a>
+    </p>
+  </div>
+</div>

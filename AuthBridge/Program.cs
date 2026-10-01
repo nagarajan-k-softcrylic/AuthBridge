@@ -1,9 +1,13 @@
+using System.Text;
 using AuthBridge.Configuration;
 using AuthBridge.Data;
 using AuthBridge.Entities;
+using AuthBridge.Services;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.SpaServices.AngularCli;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -27,6 +31,11 @@ builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
     .AddEntityFrameworkStores<ApplicationDbContext>()
     .AddDefaultTokenProviders();
 
+// Register/Login (Basic Authentication) application services.
+builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection(JwtSettings.SectionName));
+builder.Services.AddScoped<ITokenService, TokenService>();
+builder.Services.AddScoped<IAuthService, AuthService>();
+
 // Duende IdentityServer - issues OIDC/OAuth tokens consumed by the Angular UI and APIs.
 // Bootstrap (in-memory) clients/scopes live in Configuration/IdentityServerConfig.cs; user
 // accounts are backed by ASP.NET Core Identity (AspNetUsers, etc.) via AddAspNetIdentity.
@@ -37,15 +46,41 @@ builder.Services.AddIdentityServer()
     .AddAspNetIdentity<ApplicationUser>()
     .AddDeveloperSigningCredential(); // TODO: replace with a persisted signing credential before production
 
+// Validates the JWTs issued by TokenService for the Basic Authentication (register/login) flow.
+var jwtSettings = builder.Configuration.GetSection(JwtSettings.SectionName).Get<JwtSettings>() ?? new JwtSettings();
 builder.Services.AddAuthentication(options =>
     {
         options.DefaultScheme = "Bearer";
     })
     .AddJwtBearer("Bearer", options =>
     {
-        options.Authority = builder.Configuration["IdentityServer:Authority"] ?? "https://localhost:5001";
-        options.TokenValidationParameters.ValidateAudience = false;
         options.RequireHttpsMetadata = false; // TODO: enforce HTTPS metadata in production
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = jwtSettings.Issuer,
+            ValidateAudience = true,
+            ValidAudience = jwtSettings.Audience,
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings.Key)),
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.FromMinutes(1),
+        };
+        // The Angular SPA no longer holds the JWT in JS-accessible storage; it's issued as an
+        // httpOnly cookie (see AuthController.SetAuthCookie). Read it from there instead of
+        // requiring an Authorization header, since httpOnly cookies can't be attached manually.
+        options.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = context =>
+            {
+                if (context.Request.Cookies.TryGetValue("authbridge_token", out var cookieToken))
+                {
+                    context.Token = cookieToken;
+                }
+
+                return Task.CompletedTask;
+            }
+        };
     });
     // TODO: chain .AddMicrosoftIdentityWebApp()/.AddSaml2() handlers here for Entra ID SSO and SAML.
 
@@ -68,11 +103,21 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
+app.UseRouting();
+
 app.UseIdentityServer();
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapControllers();
+// Endpoint execution must be dispatched here (not auto-appended at the end of the
+// pipeline) so that API controller routes are matched BEFORE the SPA fallback below.
+// Without an explicit UseEndpoints(), ASP.NET Core defers endpoint dispatch to after
+// all remaining middleware - including UseSpa() - causing every API request to be
+// swallowed by the Angular dev-server proxy / SPA fallback (404 "Cannot POST ...").
+app.UseEndpoints(endpoints =>
+{
+    endpoints.MapControllers();
+});
 
 app.UseStaticFiles();
 app.UseSpaStaticFiles();
@@ -83,7 +128,7 @@ app.UseSpa(spa =>
 
     if (app.Environment.IsDevelopment())
     {
-        spa.UseProxyToSpaDevelopmentServer("https://localhost:4200");
+        spa.UseProxyToSpaDevelopmentServer("http://localhost:4200");
     }
 });
 

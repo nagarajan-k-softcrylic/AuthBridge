@@ -1,0 +1,27 @@
+<div class="home-page">
+  <div class="home-card">
+    <h1>Welcome{{ user ? ', ' + user.firstName : '' }}!</h1>
+    <p class="subtitle">You're signed in to AuthBridge.</p>
+
+    <div class="user-info" *ngIf="user">
+      <div class="info-row">
+        <span class="label">First Name</span>
+        <span class="value">{{ user.firstName }}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Last Name</span>
+        <span class="value">{{ user.lastName }}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Email</span>
+        <span class="value">{{ user.email }}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">User ID</span>
+        <span class="value">{{ user.userId }}</span>
+      </div>
+    </div>
+
+    <button type="button" class="btn-logout" (click)="logout()">Logout</button>
+  </div>
+</div>
