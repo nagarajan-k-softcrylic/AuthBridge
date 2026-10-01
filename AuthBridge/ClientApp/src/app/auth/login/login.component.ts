@@ -1,7 +1,7 @@
 import { Component } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AuthService } from '../auth.service';
 
 @Component({
@@ -18,7 +18,12 @@ export class LoginComponent {
   authMode: 'basic' | 'sso' = 'basic';
   ssoEnabled = false;
 
-  constructor(private fb: FormBuilder, private authService: AuthService, private router: Router) {
+  constructor(
+    private fb: FormBuilder,
+    private authService: AuthService,
+    private router: Router,
+    private route: ActivatedRoute
+  ) {
     this.form = this.fb.group({
       email: ['', [Validators.required, Validators.email]],
       password: ['', [Validators.required]]
@@ -28,6 +33,22 @@ export class LoginComponent {
       next: (opts) => (this.ssoEnabled = opts.ssoEnabled),
       error: () => (this.ssoEnabled = false)
     });
+  }
+
+  /**
+   * ASP.NET Core Identity/IdentityServer appends a `ReturnUrl` query param (e.g.
+   * `/connect/authorize/callback?...`) when it redirects an unauthenticated user here mid-OIDC
+   * handshake. That's a server-side path, not an Angular route, so it must be followed with a
+   * full browser navigation (`window.location.href`) instead of `router.navigateByUrl`, which
+   * would try (and fail) to resolve it against the SPA's client-side routes.
+   */
+  private navigateAfterLogin(): void {
+    const returnUrl = this.route.snapshot.queryParamMap.get('ReturnUrl') ?? this.route.snapshot.queryParamMap.get('returnUrl');
+    if (returnUrl) {
+      window.location.href = returnUrl;
+    } else {
+      this.router.navigateByUrl('/home');
+    }
   }
 
   switchMode(mode: 'basic' | 'sso'): void {
@@ -52,7 +73,7 @@ export class LoginComponent {
       next: (res) => {
         this.submitting = false;
         if (res.succeeded) {
-          this.router.navigateByUrl('/home');
+          this.navigateAfterLogin();
         } else {
           this.errorMessage = res.errors?.[0] ?? 'Login failed.';
         }

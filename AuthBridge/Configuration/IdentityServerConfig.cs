@@ -19,6 +19,7 @@ public static class IdentityServerConfig
         new List<ApiScope>
         {
             new ApiScope("authbridge.api", "AuthBridge API"),
+            new ApiScope("authbridge", "AuthBridge API (OIDC confidential client)"),
         };
 
     public static IEnumerable<Client> Clients =>
@@ -45,6 +46,27 @@ public static class IdentityServerConfig
                 },
 
                 AllowAccessTokensViaBrowser = true,
+            },
+
+            // Server-side (confidential) OIDC client used by Program.cs's
+            // .AddOpenIdConnect("oidc", ...) handler - credentials come from the
+            // "Oidc" section in appsettings.json and must match this entry exactly.
+            new Client
+            {
+                ClientId = "1e52547a-efc0-4699-88bb-a62835b91233",
+                ClientName = "AuthBridge OIDC Confidential Client",
+                ClientSecrets = { new Secret("+t8g+yLv7Bs+XMjwos8QQWcM9aJbFTCN3FFSkiBXuuw=".Sha256()) },
+                AllowedGrantTypes = GrantTypes.Code,
+                RequirePkce = true,
+
+                RedirectUris = { "https://localhost:7199/signin-oidc" },
+                PostLogoutRedirectUris = { "https://localhost:7199/signout-callback-oidc" },
+
+                AllowedScopes =
+                {
+                    "openid",
+                    "authbridge",
+                },
             },
         };
 }

@@ -138,7 +138,13 @@ public class AuthController : ControllerBase
     }
 
     /// <summary>Returns the currently authenticated user's profile, read from the auth cookie.</summary>
-    [Authorize]
+    /// <remarks>
+    /// Explicitly pinned to the "Bearer" scheme: the app-wide default authentication scheme is
+    /// now "Cookies" (default challenge "oidc") for the SSO flow. Without this override, an
+    /// unauthenticated call here would be challenged by "oidc" and get a redirect instead of a
+    /// 401 - breaking the Angular interceptor's silent-refresh-on-401 logic.
+    /// </remarks>
+    [Authorize(AuthenticationSchemes = "Bearer")]
     [HttpGet("me")]
     public ActionResult<AuthResponseDto> Me()
     {
@@ -149,6 +155,25 @@ public class AuthController : ControllerBase
             Email = User.FindFirstValue(ClaimTypes.Email) ?? User.FindFirstValue("email"),
             FirstName = User.FindFirstValue("firstName"),
             LastName = User.FindFirstValue("lastName"),
+        });
+    }
+
+    /// <summary>
+    /// TEST-ONLY endpoint to manually verify the OIDC SSO flow. Uses no explicit
+    /// AuthenticationSchemes, so it falls back to the app-wide defaults configured in
+    /// Program.cs: DefaultScheme = "Cookies", DefaultChallengeScheme = "oidc". Hitting this
+    /// route unauthenticated should redirect to the IdentityServer login page; after a
+    /// successful login it should redirect back to /signin-oidc and then land here, returning
+    /// the authenticated user's claims.
+    /// </summary>
+    [Authorize]
+    [HttpGet("sso-test")]
+    public IActionResult SsoTest()
+    {
+        return Ok(new
+        {
+            message = "SSO login succeeded.",
+            claims = User.Claims.Select(c => new { c.Type, c.Value }),
         });
     }
 

@@ -82,6 +82,12 @@ public class AuthService : IAuthService
 
         _logger.LogInformation("New user registered: {Email}", user.Email);
 
+        // Establishes the "Identity.Application" cookie alongside the JWT so the interactive
+        // OIDC/IdentityServer flow (which challenges that cookie scheme) recognizes the user as
+        // already signed in - without this, /connect/authorize keeps redirecting back to login
+        // even after a successful Basic Authentication sign-in.
+        await _signInManager.SignInAsync(user, isPersistent: true);
+
         return await BuildSuccessResponseAsync(user);
     }
 
@@ -114,6 +120,12 @@ public class AuthService : IAuthService
             // TODO: integrate MFA verification step (e.g. TOTP/SMS) before issuing the access token.
             return new AuthResponseDto { Succeeded = true, RequiresMfa = true, UserId = user.Id, Email = user.Email };
         }
+
+        // Establishes the "Identity.Application" cookie alongside the JWT so the interactive
+        // OIDC/IdentityServer flow (which challenges that cookie scheme) recognizes the user as
+        // already signed in - without this, /connect/authorize keeps redirecting back to login
+        // even after a successful Basic Authentication sign-in.
+        await _signInManager.SignInAsync(user, isPersistent: true);
 
         return await BuildSuccessResponseAsync(user);
     }

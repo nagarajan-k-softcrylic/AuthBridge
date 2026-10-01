@@ -1,13 +1,19 @@
+using System.IdentityModel.Tokens.Jwt;
 using System.Text;
 using AuthBridge.Configuration;
 using AuthBridge.Data;
 using AuthBridge.Entities;
 using AuthBridge.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.SpaServices.AngularCli;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+
+// OIDC claim types should keep their original short names (e.g. "sub", "email") instead of
+// being remapped to long legacy Microsoft URIs (e.g. ".../claims/identity/claims/nameidentifier").
+JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear();
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -48,16 +54,35 @@ builder.Services.AddIdentityServer()
 
 // Validates the JWTs issued by TokenService for the Basic Authentication (register/login) flow.
 var jwtSettings = builder.Configuration.GetSection(JwtSettings.SectionName).Get<JwtSettings>() ?? new JwtSettings();
+var oidcSection = builder.Configuration.GetSection("Oidc");
 builder.Services.AddAuthentication(options =>
     {
-        // AddIdentity() above already set DefaultChallengeScheme/DefaultAuthenticateScheme to
-        // the cookie-based "Identity.Application" scheme. Without overriding them here too,
-        // an unauthenticated [Authorize] request (e.g. GET /api/auth/me) gets challenged by the
-        // cookie handler, which redirects (302 to the login page) instead of returning 401 -
-        // breaking the Angular interceptor's silent-refresh-on-401 logic.
-        options.DefaultScheme = "Bearer";
-        options.DefaultChallengeScheme = "Bearer";
-        options.DefaultAuthenticateScheme = "Bearer";
+        // Requirement: "Cookies" is the default scheme (holds the signed-in user's session
+        // after the OIDC handshake completes); "oidc" is the default CHALLENGE scheme (so a
+        // plain [Authorize] with no explicit scheme redirects to the Identity Provider's login
+        // page). The JWT Bearer API flow (e.g. GET /api/auth/me) must keep returning 401 instead
+        // of a redirect, so it opts out of these defaults via
+        // [Authorize(AuthenticationSchemes = "Bearer")] on that endpoint - see AuthController.
+        options.DefaultScheme = "Cookies";
+        options.DefaultChallengeScheme = "oidc";
+    })
+    .AddCookie("Cookies")
+    .AddOpenIdConnect("oidc", options =>
+    {
+        options.Authority = oidcSection["Authority"];
+        options.RequireHttpsMetadata = oidcSection.GetValue<bool>("RequireHttpsMetadata");
+        options.ClientId = oidcSection["ClientId"];
+        options.ClientSecret = oidcSection["ClientSecret"];
+        options.ResponseType = "code";
+        options.SaveTokens = true;
+
+        options.Scope.Clear();
+        options.Scope.Add("openid");
+        var apiScope = oidcSection["ApiScope"];
+        if (!string.IsNullOrWhiteSpace(apiScope))
+        {
+            options.Scope.Add(apiScope);
+        }
     })
     .AddJwtBearer("Bearer", options =>
     {
