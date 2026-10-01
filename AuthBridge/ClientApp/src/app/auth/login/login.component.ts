@@ -13,6 +13,7 @@ import { AuthService } from '../auth.service';
 })
 export class LoginComponent {
   form: FormGroup;
+  ssoForm: FormGroup;
   submitting = false;
   errorMessage: string | null = null;
   authMode: 'basic' | 'sso' = 'basic';
@@ -27,6 +28,10 @@ export class LoginComponent {
     this.form = this.fb.group({
       email: ['', [Validators.required, Validators.email]],
       password: ['', [Validators.required]]
+    });
+
+    this.ssoForm = this.fb.group({
+      email: ['', [Validators.required, Validators.email]]
     });
 
     this.authService.getAuthOptions().subscribe({
@@ -57,7 +62,13 @@ export class LoginComponent {
   }
 
   onSsoLogin(): void {
-    window.location.href = this.authService.ssoLoginUrl();
+    if (this.ssoForm.invalid) {
+      this.ssoForm.markAllAsTouched();
+      return;
+    }
+
+    this.errorMessage = null;
+    window.location.href = this.authService.ssoLoginUrl(this.ssoForm.value.email);
   }
 
   onSubmit(): void {

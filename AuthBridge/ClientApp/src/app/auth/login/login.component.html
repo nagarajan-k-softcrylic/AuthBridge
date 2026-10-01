@@ -36,12 +36,21 @@
       </button>
     </form>
 
-    <div *ngIf="authMode === 'sso'" class="sso-section">
+    <form *ngIf="authMode === 'sso'" class="sso-section" [formGroup]="ssoForm" (ngSubmit)="onSsoLogin()">
+      <div class="form-group">
+        <label for="sso-email">Email</label>
+        <input id="sso-email" type="email" formControlName="email" placeholder="you@example.com" />
+        <small class="error" *ngIf="ssoForm.get('email')?.touched && ssoForm.get('email')?.invalid">
+          Enter a valid email address.
+        </small>
+      </div>
+
       <div class="error server-error" *ngIf="errorMessage">{{ errorMessage }}</div>
-      <button type="button" class="btn-primary" (click)="onSsoLogin()">
-        Continue with SSO
+
+      <button type="submit" class="btn-primary">
+        Sign In
       </button>
-    </div>
+    </form>
 
     <p class="switch-link" *ngIf="authMode === 'basic'">
       Don't have an account? <a routerLink="/register">Create one</a>

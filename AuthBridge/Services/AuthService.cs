@@ -173,6 +173,59 @@ public class AuthService : IAuthService
         }
     }
 
+    public async Task<AuthResponseDto> IssueTokensForOidcUserAsync(string userId)
+    {
+        var user = await _userManager.FindByIdAsync(userId);
+        if (user is null)
+        {
+            return new AuthResponseDto { Succeeded = false, Errors = { "User not found." } };
+        }
+
+        return await BuildSuccessResponseAsync(user);
+    }
+
+    public async Task<AuthResponseDto> IssueTokensForExternalUserAsync(string email, string? firstName, string? lastName)
+    {
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            return new AuthResponseDto { Succeeded = false, Errors = { "The external identity did not provide an email address." } };
+        }
+
+        var user = await _userManager.FindByEmailAsync(email);
+        if (user is null)
+        {
+            user = new ApplicationUser
+            {
+                UserName = email,
+                Email = email,
+                EmailConfirmed = true,
+                FirstName = firstName ?? string.Empty,
+                LastName = lastName ?? string.Empty,
+            };
+
+            var createResult = await _userManager.CreateAsync(user);
+            if (!createResult.Succeeded)
+            {
+                return new AuthResponseDto
+                {
+                    Succeeded = false,
+                    Errors = createResult.Errors.Select(e => e.Description).ToList(),
+                };
+            }
+
+            if (!await _roleManager.RoleExistsAsync(DefaultRole))
+            {
+                await _roleManager.CreateAsync(new IdentityRole(DefaultRole));
+            }
+
+            await _userManager.AddToRoleAsync(user, DefaultRole);
+
+            _logger.LogInformation("Auto-provisioned local user from external IdP login: {Email}", user.Email);
+        }
+
+        return await BuildSuccessResponseAsync(user);
+    }
+
     private async Task<AuthResponseDto> BuildSuccessResponseAsync(ApplicationUser user)
     {
         var roles = await _userManager.GetRolesAsync(user);

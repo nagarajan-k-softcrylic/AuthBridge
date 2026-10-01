@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using AuthBridge.DTOs;
 using AuthBridge.Services;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -29,15 +30,22 @@ public class AuthController : ControllerBase
     [HttpGet("options")]
     public ActionResult<AuthOptionsDto> GetOptions()
     {
-        var ssoEnabled = _configuration.GetValue<bool>("EntraId:Enabled")
-            && !string.IsNullOrWhiteSpace(_configuration["EntraId:ClientId"]);
+        // SSO is available via the standalone OIDC flow (oidc-login/oidc-callback) as soon as
+        // the Oidc client is configured - Entra ID remains a separate, not-yet-wired option.
+        var ssoEnabled = !string.IsNullOrWhiteSpace(_configuration["Oidc:ClientId"])
+            || (_configuration.GetValue<bool>("EntraId:Enabled") && !string.IsNullOrWhiteSpace(_configuration["EntraId:ClientId"]));
 
         return Ok(new AuthOptionsDto { SsoEnabled = ssoEnabled });
     }
 
-    /// <summary>Starts the SSO (Entra ID) sign-in flow. Requires EntraId to be configured and enabled.</summary>
+    /// <summary>
+    /// Starts the SSO (Entra ID) sign-in flow. Requires EntraId to be configured and enabled.
+    /// The optional <paramref name="email"/> (collected on the login page's SSO tab) is passed
+    /// through as an OIDC `login_hint` so Microsoft's login page pre-fills/targets that account
+    /// instead of showing a generic "pick an account" screen.
+    /// </summary>
     [HttpGet("sso-login")]
-    public IActionResult SsoLogin()
+    public IActionResult SsoLogin([FromQuery] string? email)
     {
         var ssoEnabled = _configuration.GetValue<bool>("EntraId:Enabled")
             && !string.IsNullOrWhiteSpace(_configuration["EntraId:ClientId"]);
@@ -51,13 +59,36 @@ public class AuthController : ControllerBase
             });
         }
 
-        // TODO: once AddMicrosoftIdentityWebApp()/Entra handler is registered in Program.cs,
-        // replace this with: return Challenge(new AuthenticationProperties { RedirectUri = "/" }, "EntraId");
-        return StatusCode(StatusCodes.Status501NotImplemented, new AuthResponseDto
+        var properties = new AuthenticationProperties { RedirectUri = "/api/auth/entra-callback" };
+        if (!string.IsNullOrWhiteSpace(email))
         {
-            Succeeded = false,
-            Errors = { "SSO handler is not yet wired up." },
-        });
+            properties.Items["login_hint"] = email;
+        }
+
+        return Challenge(properties, "EntraId");
+    }
+
+    /// <summary>
+    /// Reached after a successful Microsoft Entra ID sign-in. Auto-provisions (or matches by
+    /// email) a local user, mints the same JWT/refresh-token cookie pair as Basic Authentication
+    /// login does, then redirects the browser into the SPA.
+    /// </summary>
+    [Authorize(AuthenticationSchemes = "Cookies")]
+    [HttpGet("entra-callback")]
+    public async Task<IActionResult> EntraCallback()
+    {
+        var email = User.FindFirstValue(ClaimTypes.Email) ?? User.FindFirstValue("preferred_username");
+        var firstName = User.FindFirstValue(ClaimTypes.GivenName);
+        var lastName = User.FindFirstValue(ClaimTypes.Surname);
+
+        var result = await _authService.IssueTokensForExternalUserAsync(email ?? string.Empty, firstName, lastName);
+        if (!result.Succeeded)
+        {
+            return Unauthorized(result);
+        }
+
+        SetAuthCookies(result);
+        return Redirect("/home");
     }
 
     /// <summary>Registers a new user account (Basic Authentication flow).</summary>
@@ -124,7 +155,14 @@ public class AuthController : ControllerBase
         return Ok(result);
     }
 
-    /// <summary>Revokes the refresh token server-side and clears both auth cookies, logging the user out.</summary>
+    /// <summary>
+    /// Revokes the refresh token server-side and clears the JWT auth cookies, logging the user
+    /// out of the Basic Authentication session. Also signs out of the "Cookies" and
+    /// "Identity.Application" schemes so the OIDC/IdentityServer session set up by the SSO login
+    /// option is cleared too - otherwise /connect/authorize would silently re-authenticate the
+    /// user from the stale session cookie on their next "SSO Login" click, instead of prompting
+    /// for login again.
+    /// </summary>
     [HttpPost("logout")]
     public async Task<IActionResult> Logout()
     {
@@ -134,6 +172,8 @@ public class AuthController : ControllerBase
         }
 
         DeleteAuthCookies();
+        await HttpContext.SignOutAsync("Cookies");
+        await HttpContext.SignOutAsync("Identity.Application");
         return Ok();
     }
 
@@ -175,6 +215,44 @@ public class AuthController : ControllerBase
             message = "SSO login succeeded.",
             claims = User.Claims.Select(c => new { c.Type, c.Value }),
         });
+    }
+
+    /// <summary>
+    /// Starts the standalone OIDC SSO login option: redirects the browser into the "oidc"
+    /// Authorization Code flow against IdentityServer. On completion the OIDC middleware calls
+    /// back to <see cref="OidcCallback"/> (set as the post-login RedirectUri below), which bridges
+    /// the resulting "Cookies"-authenticated identity into the SPA's usual JWT cookies.
+    /// </summary>
+    [HttpGet("oidc-login")]
+    public IActionResult OidcLogin()
+    {
+        return Challenge(new AuthenticationProperties { RedirectUri = "/api/auth/oidc-callback" }, "oidc");
+    }
+
+    /// <summary>
+    /// Reached after a successful "oidc-login" handshake, once the "Cookies" scheme has the
+    /// authenticated principal. Mints the same JWT/refresh-token cookie pair as Basic
+    /// Authentication login does, then redirects the browser into the SPA - so the standalone
+    /// SSO option results in the same client-side session shape as password login.
+    /// </summary>
+    [Authorize]
+    [HttpGet("oidc-callback")]
+    public async Task<IActionResult> OidcCallback()
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
+        if (string.IsNullOrEmpty(userId))
+        {
+            return Unauthorized();
+        }
+
+        var result = await _authService.IssueTokensForOidcUserAsync(userId);
+        if (!result.Succeeded)
+        {
+            return Unauthorized(result);
+        }
+
+        SetAuthCookies(result);
+        return Redirect("/home");
     }
 
     /// <summary>

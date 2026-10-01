@@ -93,8 +93,14 @@ export class AuthService {
     return this.http.get<AuthOptions>(`${this.baseUrl}/options`);
   }
 
-  ssoLoginUrl(): string {
-    return `${this.baseUrl}/sso-login`;
+  /**
+   * Standalone SSO login: full-page redirect into the Microsoft Entra ID Authorization Code
+   * flow. The optional email is passed through as a `login_hint` so Microsoft's login page
+   * targets that account directly.
+   */
+  ssoLoginUrl(email?: string): string {
+    const params = email ? `?email=${encodeURIComponent(email)}` : '';
+    return `${this.baseUrl}/sso-login${params}`;
   }
 
   /** Returns the cached user if known, otherwise asks the server (cookie-based). */

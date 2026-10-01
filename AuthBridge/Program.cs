@@ -42,6 +42,19 @@ builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection(JwtSett
 builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 
+// Read once up-front so both the "Identity.Application" and "Cookies" schemes below can be
+// aligned with the JWT refresh token's lifetime (RefreshTokenDays).
+var jwtSettings = builder.Configuration.GetSection(JwtSettings.SectionName).Get<JwtSettings>() ?? new JwtSettings();
+
+// "Identity.Application" is set by SignInManager.SignInAsync on Basic Auth login/register and
+// checked by IdentityServer's /connect/authorize. Matching its lifetime to the JWT refresh token
+// avoids the OIDC session outliving (or expiring before) the rest of the user's session.
+builder.Services.ConfigureApplicationCookie(options =>
+{
+    options.ExpireTimeSpan = TimeSpan.FromDays(jwtSettings.RefreshTokenDays);
+    options.SlidingExpiration = true;
+});
+
 // Duende IdentityServer - issues OIDC/OAuth tokens consumed by the Angular UI and APIs.
 // Bootstrap (in-memory) clients/scopes live in Configuration/IdentityServerConfig.cs; user
 // accounts are backed by ASP.NET Core Identity (AspNetUsers, etc.) via AddAspNetIdentity.
@@ -53,7 +66,6 @@ builder.Services.AddIdentityServer()
     .AddDeveloperSigningCredential(); // TODO: replace with a persisted signing credential before production
 
 // Validates the JWTs issued by TokenService for the Basic Authentication (register/login) flow.
-var jwtSettings = builder.Configuration.GetSection(JwtSettings.SectionName).Get<JwtSettings>() ?? new JwtSettings();
 var oidcSection = builder.Configuration.GetSection("Oidc");
 builder.Services.AddAuthentication(options =>
     {
@@ -66,7 +78,15 @@ builder.Services.AddAuthentication(options =>
         options.DefaultScheme = "Cookies";
         options.DefaultChallengeScheme = "oidc";
     })
-    .AddCookie("Cookies")
+    .AddCookie("Cookies", options =>
+    {
+        // Align the OIDC session cookie's lifetime with the JWT refresh token's lifetime
+        // (RefreshTokenDays) so neither session outlives the other in a confusing way - e.g. the
+        // "Cookies" session staying valid long after the JWT refresh token has expired (or vice
+        // versa), which would make SSO re-login behave inconsistently with Basic Auth re-login.
+        options.ExpireTimeSpan = TimeSpan.FromDays(jwtSettings.RefreshTokenDays);
+        options.SlidingExpiration = true;
+    })
     .AddOpenIdConnect("oidc", options =>
     {
         options.Authority = oidcSection["Authority"];
@@ -113,8 +133,70 @@ builder.Services.AddAuthentication(options =>
                 return Task.CompletedTask;
             }
         };
+    })
+    // Microsoft Entra ID - external IdP for the standalone "Continue with SSO" option, separate
+    // from the local "oidc" client above (different Authority, different callback path so the
+    // two don't collide). Registered unconditionally (reading whatever is in config) so the
+    // scheme always exists; AuthController.SsoLogin() guards actual use behind EntraId:Enabled.
+    .AddOpenIdConnect("EntraId", options =>
+    {
+        var entraSection = builder.Configuration.GetSection("EntraId");
+        var instance = entraSection["Instance"] ?? "https://login.microsoftonline.com/";
+        var tenantId = entraSection["TenantId"];
+        options.Authority = $"{instance.TrimEnd('/')}/{tenantId}/v2.0";
+        options.ClientId = entraSection["ClientId"];
+        options.ClientSecret = entraSection["ClientSecret"];
+        options.ResponseType = "code";
+        options.CallbackPath = "/signin-oidc-entra";
+        options.SaveTokens = true;
+        // Explicitly pin the sign-in scheme to "Cookies" instead of relying on the ambiguous
+        // DefaultScheme fallback - ASP.NET Core Identity also registers its own cookie scheme
+        // ("Identity.Application"), and without this, EntraCallback()'s [Authorize] could fail to
+        // see the signed-in principal and fall through to a challenge on the local "oidc" client.
+        options.SignInScheme = "Cookies";
+
+        options.Scope.Clear();
+        options.Scope.Add("openid");
+        options.Scope.Add("email");
+        options.Scope.Add("profile");
+
+        // Forwards the "login_hint" set in AuthController.SsoLogin() (from the email the user
+        // typed on the SSO tab) so Microsoft's login page targets that account directly instead
+        // of showing a generic "pick an account"/"enter any email" screen.
+        options.Events = new OpenIdConnectEvents
+        {
+            OnRedirectToIdentityProvider = context =>
+            {
+                if (context.Properties.Items.TryGetValue("login_hint", out var loginHint) && !string.IsNullOrWhiteSpace(loginHint))
+                {
+                    context.ProtocolMessage.LoginHint = loginHint;
+                }
+
+                return Task.CompletedTask;
+            },
+            // Temporary diagnostics: surfaces the real reason the Entra ID handshake doesn't
+            // result in an authenticated "Cookies" principal (e.g. token validation failure)
+            // instead of silently falling through to the default challenge scheme.
+            OnAuthenticationFailed = context =>
+            {
+                var diagLogger = context.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("EntraId");
+                diagLogger.LogError(context.Exception, "EntraId authentication failed.");
+                return Task.CompletedTask;
+            },
+            OnRemoteFailure = context =>
+            {
+                var diagLogger = context.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("EntraId");
+                diagLogger.LogError(context.Failure, "EntraId remote failure.");
+                return Task.CompletedTask;
+            },
+            OnTokenValidated = context =>
+            {
+                var diagLogger = context.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("EntraId");
+                diagLogger.LogInformation("EntraId token validated for {Name}.", context.Principal?.Identity?.Name);
+                return Task.CompletedTask;
+            }
+        };
     });
-    // TODO: chain .AddMicrosoftIdentityWebApp()/.AddSaml2() handlers here for Entra ID SSO and SAML.
 
 builder.Services.AddAuthorization();
 
