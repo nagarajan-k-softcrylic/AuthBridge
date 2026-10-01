@@ -16,4 +16,7 @@ public class JwtSettings
     public string Key { get; set; } = string.Empty;
 
     public int AccessTokenMinutes { get; set; } = 60;
+
+    /// <summary>How long a refresh token remains valid before the user must log in again.</summary>
+    public int RefreshTokenDays { get; set; } = 7;
 }

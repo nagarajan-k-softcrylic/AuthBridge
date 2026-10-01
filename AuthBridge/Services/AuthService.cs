@@ -1,6 +1,10 @@
+using AuthBridge.Configuration;
+using AuthBridge.Data;
 using AuthBridge.DTOs;
 using AuthBridge.Entities;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace AuthBridge.Services;
 
@@ -17,6 +21,8 @@ public class AuthService : IAuthService
     private readonly SignInManager<ApplicationUser> _signInManager;
     private readonly RoleManager<IdentityRole> _roleManager;
     private readonly ITokenService _tokenService;
+    private readonly ApplicationDbContext _dbContext;
+    private readonly JwtSettings _jwtSettings;
     private readonly ILogger<AuthService> _logger;
 
     public AuthService(
@@ -24,12 +30,16 @@ public class AuthService : IAuthService
         SignInManager<ApplicationUser> signInManager,
         RoleManager<IdentityRole> roleManager,
         ITokenService tokenService,
+        ApplicationDbContext dbContext,
+        IOptions<JwtSettings> jwtSettings,
         ILogger<AuthService> logger)
     {
         _userManager = userManager;
         _signInManager = signInManager;
         _roleManager = roleManager;
         _tokenService = tokenService;
+        _dbContext = dbContext;
+        _jwtSettings = jwtSettings.Value;
         _logger = logger;
     }
 
@@ -108,16 +118,72 @@ public class AuthService : IAuthService
         return await BuildSuccessResponseAsync(user);
     }
 
+    public async Task<AuthResponseDto> RefreshAsync(string rawRefreshToken)
+    {
+        if (string.IsNullOrWhiteSpace(rawRefreshToken))
+        {
+            return new AuthResponseDto { Succeeded = false, Errors = { "Refresh token is missing." } };
+        }
+
+        var tokenHash = _tokenService.HashRefreshToken(rawRefreshToken);
+        var existing = await _dbContext.RefreshTokens
+            .Include(t => t.User)
+            .FirstOrDefaultAsync(t => t.TokenHash == tokenHash);
+
+        if (existing is null || !existing.IsActive || existing.User is null)
+        {
+            return new AuthResponseDto { Succeeded = false, Errors = { "Refresh token is invalid or expired." } };
+        }
+
+        // Rotation: the used token is revoked immediately so it cannot be replayed even if
+        // intercepted; a brand new refresh token is issued alongside the new access token.
+        existing.RevokedAtUtc = DateTime.UtcNow;
+
+        // BuildSuccessResponseAsync persists the new refresh token and, in the same
+        // SaveChangesAsync call, flushes the revocation above (single DbContext instance).
+        return await BuildSuccessResponseAsync(existing.User);
+    }
+
+    public async Task RevokeRefreshTokenAsync(string rawRefreshToken)
+    {
+        if (string.IsNullOrWhiteSpace(rawRefreshToken))
+        {
+            return;
+        }
+
+        var tokenHash = _tokenService.HashRefreshToken(rawRefreshToken);
+        var existing = await _dbContext.RefreshTokens.FirstOrDefaultAsync(t => t.TokenHash == tokenHash);
+
+        if (existing is not null && existing.RevokedAtUtc is null)
+        {
+            existing.RevokedAtUtc = DateTime.UtcNow;
+            await _dbContext.SaveChangesAsync();
+        }
+    }
+
     private async Task<AuthResponseDto> BuildSuccessResponseAsync(ApplicationUser user)
     {
         var roles = await _userManager.GetRolesAsync(user);
         var (token, expiresAtUtc) = _tokenService.GenerateAccessToken(user, roles);
+
+        var rawRefreshToken = _tokenService.GenerateRefreshToken();
+        var refreshTokenExpiresAtUtc = DateTime.UtcNow.AddDays(_jwtSettings.RefreshTokenDays);
+
+        _dbContext.RefreshTokens.Add(new RefreshToken
+        {
+            UserId = user.Id,
+            TokenHash = _tokenService.HashRefreshToken(rawRefreshToken),
+            ExpiresAtUtc = refreshTokenExpiresAtUtc,
+        });
+        await _dbContext.SaveChangesAsync();
 
         return new AuthResponseDto
         {
             Succeeded = true,
             Token = token,
             ExpiresAtUtc = expiresAtUtc,
+            RefreshToken = rawRefreshToken,
+            RefreshTokenExpiresAtUtc = refreshTokenExpiresAtUtc,
             UserId = user.Id,
             Email = user.Email,
             FirstName = user.FirstName,

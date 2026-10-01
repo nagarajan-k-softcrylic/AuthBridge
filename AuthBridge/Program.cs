@@ -50,7 +50,14 @@ builder.Services.AddIdentityServer()
 var jwtSettings = builder.Configuration.GetSection(JwtSettings.SectionName).Get<JwtSettings>() ?? new JwtSettings();
 builder.Services.AddAuthentication(options =>
     {
+        // AddIdentity() above already set DefaultChallengeScheme/DefaultAuthenticateScheme to
+        // the cookie-based "Identity.Application" scheme. Without overriding them here too,
+        // an unauthenticated [Authorize] request (e.g. GET /api/auth/me) gets challenged by the
+        // cookie handler, which redirects (302 to the login page) instead of returning 401 -
+        // breaking the Angular interceptor's silent-refresh-on-401 logic.
         options.DefaultScheme = "Bearer";
+        options.DefaultChallengeScheme = "Bearer";
+        options.DefaultAuthenticateScheme = "Bearer";
     })
     .AddJwtBearer("Bearer", options =>
     {

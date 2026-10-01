@@ -71,6 +71,24 @@ export class AuthService {
     );
   }
 
+  /**
+   * Exchanges the httpOnly refresh-token cookie for a new access token (silent renewal).
+   * Called by the auth interceptor when an API call fails with 401 (expired access token),
+   * so the user isn't logged out just because the short-lived access token expired.
+   */
+  refresh(): Observable<AuthUser | null> {
+    return this.http.post<AuthResponse>(`${this.baseUrl}/refresh`, {}, { withCredentials: true }).pipe(
+      map((res) => {
+        this.cacheUser(res);
+        return this.currentUser;
+      }),
+      catchError(() => {
+        this.currentUser = null;
+        return of(null);
+      })
+    );
+  }
+
   getAuthOptions(): Observable<AuthOptions> {
     return this.http.get<AuthOptions>(`${this.baseUrl}/options`);
   }

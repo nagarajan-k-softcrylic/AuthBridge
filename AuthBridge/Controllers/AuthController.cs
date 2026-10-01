@@ -11,6 +11,7 @@ namespace AuthBridge.Controllers;
 public class AuthController : ControllerBase
 {
     private const string AuthCookieName = "authbridge_token";
+    private const string RefreshCookieName = "authbridge_refresh_token";
 
     private readonly IAuthService _authService;
     private readonly IConfiguration _configuration;
@@ -75,7 +76,7 @@ public class AuthController : ControllerBase
             return BadRequest(result);
         }
 
-        SetAuthCookie(result);
+        SetAuthCookies(result);
         return Ok(result);
     }
 
@@ -95,15 +96,44 @@ public class AuthController : ControllerBase
             return Unauthorized(result);
         }
 
-        SetAuthCookie(result);
+        SetAuthCookies(result);
         return Ok(result);
     }
 
-    /// <summary>Clears the auth cookie, logging the current user out.</summary>
-    [HttpPost("logout")]
-    public IActionResult Logout()
+    /// <summary>
+    /// Silently exchanges the long-lived refresh token cookie for a new short-lived access
+    /// token (and a rotated refresh token), without requiring the user to log in again.
+    /// </summary>
+    [HttpPost("refresh")]
+    public async Task<ActionResult<AuthResponseDto>> Refresh()
     {
-        Response.Cookies.Delete(AuthCookieName, new CookieOptions { Path = "/" });
+        if (!Request.Cookies.TryGetValue(RefreshCookieName, out var rawRefreshToken) || string.IsNullOrEmpty(rawRefreshToken))
+        {
+            return Unauthorized(new AuthResponseDto { Succeeded = false, Errors = { "No refresh token present." } });
+        }
+
+        var result = await _authService.RefreshAsync(rawRefreshToken);
+
+        if (!result.Succeeded)
+        {
+            DeleteAuthCookies();
+            return Unauthorized(result);
+        }
+
+        SetAuthCookies(result);
+        return Ok(result);
+    }
+
+    /// <summary>Revokes the refresh token server-side and clears both auth cookies, logging the user out.</summary>
+    [HttpPost("logout")]
+    public async Task<IActionResult> Logout()
+    {
+        if (Request.Cookies.TryGetValue(RefreshCookieName, out var rawRefreshToken) && !string.IsNullOrEmpty(rawRefreshToken))
+        {
+            await _authService.RevokeRefreshTokenAsync(rawRefreshToken);
+        }
+
+        DeleteAuthCookies();
         return Ok();
     }
 
@@ -123,25 +153,45 @@ public class AuthController : ControllerBase
     }
 
     /// <summary>
-    /// Stores the JWT in an httpOnly, Secure cookie so it's never exposed to JavaScript
-    /// (mitigates XSS token theft). The response body never includes the raw token.
+    /// Stores the JWT access token and refresh token in separate httpOnly, Secure cookies so
+    /// neither is ever exposed to JavaScript (mitigates XSS token theft). The response body
+    /// never includes the raw token values.
     /// </summary>
-    private void SetAuthCookie(AuthResponseDto result)
+    private void SetAuthCookies(AuthResponseDto result)
     {
-        if (string.IsNullOrEmpty(result.Token))
+        if (!string.IsNullOrEmpty(result.Token))
         {
-            return;
+            Response.Cookies.Append(AuthCookieName, result.Token, new CookieOptions
+            {
+                HttpOnly = true,
+                Secure = true,
+                SameSite = SameSiteMode.Strict,
+                Expires = result.ExpiresAtUtc,
+                Path = "/",
+            });
         }
 
-        Response.Cookies.Append(AuthCookieName, result.Token, new CookieOptions
+        if (!string.IsNullOrEmpty(result.RefreshToken))
         {
-            HttpOnly = true,
-            Secure = true,
-            SameSite = SameSiteMode.Strict,
-            Expires = result.ExpiresAtUtc,
-            Path = "/",
-        });
+            Response.Cookies.Append(RefreshCookieName, result.RefreshToken, new CookieOptions
+            {
+                HttpOnly = true,
+                Secure = true,
+                SameSite = SameSiteMode.Strict,
+                Expires = result.RefreshTokenExpiresAtUtc,
+                // Scoped to the refresh/logout endpoints only - the raw refresh token never
+                // needs to travel with ordinary API calls, limiting its exposure surface.
+                Path = "/api/auth",
+            });
+        }
 
         result.Token = null;
+        result.RefreshToken = null;
+    }
+
+    private void DeleteAuthCookies()
+    {
+        Response.Cookies.Delete(AuthCookieName, new CookieOptions { Path = "/" });
+        Response.Cookies.Delete(RefreshCookieName, new CookieOptions { Path = "/api/auth" });
     }
 }
