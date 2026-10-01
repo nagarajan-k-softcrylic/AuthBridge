@@ -3,6 +3,9 @@ bin/
 obj/
 *.user
 
+# Duende IdentityServer developer signing key (auto-generated, dev-only)
+AuthBridge/tempkey.jwk
+
 # Angular / Node
 AuthBridge/ClientApp/node_modules/
 AuthBridge/ClientApp/.angular/
