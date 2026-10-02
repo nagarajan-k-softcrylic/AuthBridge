@@ -25,6 +25,7 @@ export interface AuthResponse {
   lastName?: string;
   requiresMfa: boolean;
   mfaEnabled?: boolean;
+  roles?: string[];
   errors: string[];
 }
 
@@ -50,6 +51,7 @@ export interface AuthUser {
   firstName: string;
   lastName: string;
   mfaEnabled: boolean;
+  roles: string[];
 }
 
 /**
@@ -165,8 +167,14 @@ export class AuthService {
         email: res.email ?? '',
         firstName: res.firstName ?? '',
         lastName: res.lastName ?? '',
-        mfaEnabled: res.mfaEnabled ?? false
+        mfaEnabled: res.mfaEnabled ?? false,
+        roles: res.roles ?? []
       };
     }
+  }
+
+  /** True when the signed-in user holds the "ApplicationAdmin" role. */
+  isApplicationAdmin(): boolean {
+    return this.currentUser?.roles.includes('ApplicationAdmin') ?? false;
   }
 }

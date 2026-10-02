@@ -142,6 +142,15 @@ h1 {
   color: #1f2937;
 }
 
+.admin-link {
+  display: block;
+  width: 100%;
+  text-align: center;
+  text-decoration: none;
+  box-sizing: border-box;
+  margin: 0 0 0.75rem;
+}
+
 .btn-logout {
   width: 100%;
   padding: 0.8rem;

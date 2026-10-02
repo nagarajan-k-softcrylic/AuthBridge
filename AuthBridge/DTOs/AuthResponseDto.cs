@@ -25,6 +25,10 @@ public class AuthResponseDto
     /// <summary>True when MFA is currently enabled on the account (used to toggle the Enable/Disable MFA UI).</summary>
     public bool MfaEnabled { get; set; }
 
+    /// <summary>Role names assigned to the user (e.g. "ApplicationAdmin"), used by the frontend to
+    /// conditionally show admin-only features like the Application Search / catalog management page.</summary>
+    public List<string> Roles { get; set; } = new();
+
     /// <summary>
     /// Raw "remember this device" token, set only by VerifyMfaAsync when the user opted in.
     /// Never sent to the client as JSON - the controller moves it into an httpOnly cookie and

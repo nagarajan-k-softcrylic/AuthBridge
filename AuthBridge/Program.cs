@@ -3,6 +3,7 @@ using System.Text;
 using AuthBridge.Configuration;
 using AuthBridge.Data;
 using AuthBridge.Entities;
+using AuthBridge.Repositories;
 using AuthBridge.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
@@ -42,6 +43,12 @@ builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection(JwtSett
 builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 
+// Application Catalog (Application Access Management Portal) services.
+builder.Services.AddScoped<IApplicationRepository, ApplicationRepository>();
+builder.Services.AddScoped<IUserApplicationRepository, UserApplicationRepository>();
+builder.Services.AddScoped<IApplicationService, ApplicationService>();
+builder.Services.AddScoped<IApplicationAccessService, ApplicationAccessService>();
+
 // Read once up-front so both the "Identity.Application" and "Cookies" schemes below can be
 // aligned with the JWT refresh token's lifetime (RefreshTokenDays).
 var jwtSettings = builder.Configuration.GetSection(JwtSettings.SectionName).Get<JwtSettings>() ?? new JwtSettings();
@@ -61,8 +68,16 @@ builder.Services.ConfigureApplicationCookie(options =>
 builder.Services.AddIdentityServer()
     .AddInMemoryIdentityResources(IdentityServerConfig.IdentityResources)
     .AddInMemoryApiScopes(IdentityServerConfig.ApiScopes)
-    .AddInMemoryClients(IdentityServerConfig.Clients)
+    // Clients are NOT a fixed in-memory list: ApplicationCatalogClientStore resolves the two
+    // fixed infrastructure clients (Angular SPA, AuthBridge confidential OIDC client) plus any
+    // downstream Application Catalog entry (RESUME_AI, REPORT_GEN, TEST_APP, ...) live from the
+    // Applications table, using ApplicationCode as the ClientId.
+    .AddClientStore<ApplicationCatalogClientStore>()
     .AddAspNetIdentity<ApplicationUser>()
+    // Overrides the default ASP.NET Identity profile service so downstream Application Catalog
+    // clients (RESUME_AI, REPORT_GEN, TEST_APP) requesting the "application_access" scope receive
+    // an "app_access" claim per assigned ApplicationCode - see ApplicationProfileService.
+    .AddProfileService<ApplicationProfileService>()
     .AddDeveloperSigningCredential(); // TODO: replace with a persisted signing credential before production
 
 // Validates the JWTs issued by TokenService for the Basic Authentication (register/login) flow.
@@ -207,6 +222,90 @@ builder.Services.AddSpaStaticFiles(configuration =>
 });
 
 var app = builder.Build();
+
+// One-time idempotent seed: registers the known future-application catalog entries and grants
+// nagavjm@gmail.com access to all of them (ApplicationAdmin test account). Safe to run on every
+// startup - skips any application whose ApplicationCode already exists.
+using (var seedScope = app.Services.CreateScope())
+{
+    var seedDbContext = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    var seedUserManager = seedScope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+
+    var seedApplications = new[]
+    {
+        new Application
+        {
+            Name = "ResumeScreener AI",
+            Description = "AI-powered resume screening and candidate shortlisting application.",
+            ApplicationCode = "RESUME_AI",
+            ApplicationUrl = "https://resumescreener.example.com",
+            IsActive = true,
+            CreatedBy = "system-seed",
+        },
+        new Application
+        {
+            Name = "Report Generator",
+            Description = "Automated report generation application.",
+            ApplicationCode = "REPORT_GEN",
+            ApplicationUrl = "https://reportgenerator.example.com",
+            IsActive = true,
+            CreatedBy = "system-seed",
+        },
+        new Application
+        {
+            Name = "Test Application App",
+            Description = "Test application used for QA/testing purposes.",
+            ApplicationCode = "TEST_APP",
+            ApplicationUrl = "https://testapp.example.com",
+            IsActive = true,
+            CreatedBy = "system-seed",
+        },
+    };
+
+    foreach (var seedApp in seedApplications)
+    {
+        var exists = await seedDbContext.Applications.AnyAsync(a => a.ApplicationCode == seedApp.ApplicationCode);
+        if (!exists)
+        {
+            seedDbContext.Applications.Add(seedApp);
+        }
+    }
+
+    await seedDbContext.SaveChangesAsync();
+
+    var seedTargetUser = await seedUserManager.FindByEmailAsync("nagavjm@gmail.com");
+    if (seedTargetUser is not null)
+    {
+        var catalogApps = await seedDbContext.Applications
+            .Where(a => new[] { "RESUME_AI", "REPORT_GEN", "TEST_APP" }.Contains(a.ApplicationCode))
+            .ToListAsync();
+
+        foreach (var catalogApp in catalogApps)
+        {
+            var existingAssignment = await seedDbContext.UserApplications
+                .FirstOrDefaultAsync(ua => ua.UserId == seedTargetUser.Id && ua.ApplicationId == catalogApp.Id);
+
+            if (existingAssignment is null)
+            {
+                seedDbContext.UserApplications.Add(new UserApplication
+                {
+                    UserId = seedTargetUser.Id,
+                    ApplicationId = catalogApp.Id,
+                    IsActive = true,
+                    AssignedBy = "system-seed",
+                });
+            }
+            else if (!existingAssignment.IsActive)
+            {
+                existingAssignment.IsActive = true;
+                existingAssignment.RevokedAtUtc = null;
+                existingAssignment.RevokedBy = null;
+            }
+        }
+
+        await seedDbContext.SaveChangesAsync();
+    }
+}
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())

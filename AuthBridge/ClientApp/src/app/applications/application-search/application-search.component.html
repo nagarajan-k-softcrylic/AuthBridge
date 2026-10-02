@@ -1,0 +1,53 @@
+<div class="search-page">
+  <div class="search-header">
+    <h1>Application Search</h1>
+    <a routerLink="/home" class="back-link">&larr; Back to Home</a>
+  </div>
+
+  <div class="search-box">
+    <input
+      type="text"
+      placeholder="Search..............."
+      [(ngModel)]="searchTerm"
+      (keyup.enter)="onSearch()"
+    />
+    <button type="button" class="btn-primary" (click)="onSearch()">Search</button>
+  </div>
+
+  <p class="assign-message" *ngIf="assignMessage">{{ assignMessage }}</p>
+
+  <div class="tile-container">
+    <div class="standard-tile" *ngFor="let app of applications" [class.expanded]="assigningApplicationId === app.id">
+      <div class="tile-top">
+        <img *ngIf="app.iconUrl" [src]="app.iconUrl" alt="" class="tile-icon" />
+        <div class="tile-icon placeholder" *ngIf="!app.iconUrl">{{ app.name.charAt(0) }}</div>
+
+        <span class="tile-status" [class.inactive]="!app.isActive">{{ app.isActive ? 'Active' : 'Inactive' }}</span>
+      </div>
+
+      <h2 class="tile-title">{{ app.name }}</h2>
+      <p class="tile-info">{{ app.description }}</p>
+
+      <div class="tile-footer" *ngIf="assigningApplicationId !== app.id">
+        <button type="button" class="btn-link" (click)="startAssign(app.id)">Assign User</button>
+      </div>
+
+      <div class="assign-form" *ngIf="assigningApplicationId === app.id">
+        <input type="email" placeholder="user@example.com" [(ngModel)]="assignEmail" />
+        <div class="assign-actions">
+          <button type="button" class="btn-primary" (click)="confirmAssign(app.id)">Confirm</button>
+          <button type="button" class="btn-link" (click)="cancelAssign()">Cancel</button>
+        </div>
+        <p class="error" *ngIf="assignError">{{ assignError }}</p>
+      </div>
+    </div>
+
+    <p class="empty" *ngIf="applications.length === 0">No applications found.</p>
+  </div>
+
+  <div class="pagination" *ngIf="totalPages > 1">
+    <button type="button" [disabled]="page === 1" (click)="goToPage(page - 1)">Previous</button>
+    <span>Page {{ page }} of {{ totalPages }}</span>
+    <button type="button" [disabled]="page === totalPages" (click)="goToPage(page + 1)">Next</button>
+  </div>
+</div>

@@ -1,0 +1,50 @@
+<div class="my-apps-page">
+  <div class="my-apps-header">
+    <h1>My Applications</h1>
+    <div class="header-links">
+      <a *ngIf="isApplicationAdmin" routerLink="/applications" class="header-link">Application Search</a>
+      <a routerLink="/home" class="header-link">Account</a>
+    </div>
+  </div>
+
+  <p class="error" *ngIf="errorMessage">{{ errorMessage }}</p>
+
+  <div *ngIf="loading" class="status">Loading your applications...</div>
+
+  <p class="empty-note" *ngIf="!loading && apps.length === 0">
+    You don't have access to any applications yet. Contact an administrator to get access.
+  </p>
+
+  <section class="honeycomb" *ngIf="!loading">
+    <div class="hex-row" *ngFor="let row of rows">
+      <div class="hexagon" *ngFor="let app of row">
+        <div class="hex1">
+          <div
+            class="hex2"
+            [class.hex-empty]="!app"
+            [style.background]="app ? (app.iconUrl ? 'url(' + app.iconUrl + ') center/cover' : tileColor(app)) : null"
+          >
+            <ng-container *ngIf="app">
+              <div class="hex-face">
+                <span class="hex-initial" *ngIf="!app.iconUrl">{{ app.applicationName.charAt(0) }}</span>
+              </div>
+
+              <div class="hex-desc">
+                <h3>{{ app.applicationName }}</h3>
+                <p>{{ app.applicationCode }}</p>
+                <button
+                  type="button"
+                  class="btn-launch"
+                  [disabled]="launchingApplicationId === app.applicationId"
+                  (click)="launch(app)"
+                >
+                  {{ launchingApplicationId === app.applicationId ? 'Launching...' : 'Launch' }}
+                </button>
+              </div>
+            </ng-container>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>

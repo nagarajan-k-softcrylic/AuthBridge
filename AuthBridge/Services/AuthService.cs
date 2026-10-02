@@ -417,6 +417,7 @@ public class AuthService : IAuthService
             FirstName = user.FirstName,
             LastName = user.LastName,
             MfaEnabled = user.MfaEnabled,
+            Roles = roles.ToList(),
         };
     }
 }

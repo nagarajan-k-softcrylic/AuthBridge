@@ -279,6 +279,7 @@ public class AuthController : ControllerBase
             FirstName = User.FindFirstValue("firstName"),
             LastName = User.FindFirstValue("lastName"),
             MfaEnabled = bool.TryParse(User.FindFirstValue("mfaEnabled"), out var mfaEnabled) && mfaEnabled,
+            Roles = User.FindAll(ClaimTypes.Role).Select(c => c.Value).ToList(),
         });
     }
 

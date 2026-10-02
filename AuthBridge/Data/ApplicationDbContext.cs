@@ -20,6 +20,10 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 
     public DbSet<MfaTrustedDevice> MfaTrustedDevices => Set<MfaTrustedDevice>();
 
+    public DbSet<Application> Applications => Set<Application>();
+
+    public DbSet<UserApplication> UserApplications => Set<UserApplication>();
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
@@ -48,6 +52,37 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
                 .WithMany()
                 .HasForeignKey(t => t.UserId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<Application>(entity =>
+        {
+            entity.Property(a => a.Id).ValueGeneratedNever();
+            entity.Property(a => a.Name).HasMaxLength(200).IsRequired();
+            entity.Property(a => a.ApplicationCode).HasMaxLength(50).IsRequired();
+            entity.Property(a => a.ApplicationUrl).HasMaxLength(500).IsRequired();
+            entity.Property(a => a.Description).HasMaxLength(1000);
+            entity.Property(a => a.IconUrl).HasMaxLength(500);
+            entity.HasIndex(a => a.ApplicationCode).IsUnique();
+            entity.HasQueryFilter(a => !a.IsDeleted);
+        });
+
+        builder.Entity<UserApplication>(entity =>
+        {
+            entity.HasOne(ua => ua.User)
+                .WithMany()
+                .HasForeignKey(ua => ua.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(ua => ua.Application)
+                .WithMany(a => a.UserApplications)
+                .HasForeignKey(ua => ua.ApplicationId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(ua => new { ua.UserId, ua.ApplicationId }).IsUnique();
+
+            // Mirrors Application's soft-delete query filter so EF doesn't warn about the
+            // required relationship being filtered out on only one side.
+            entity.HasQueryFilter(ua => ua.Application != null && !ua.Application.IsDeleted);
         });
     }
 }

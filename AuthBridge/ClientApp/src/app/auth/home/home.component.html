@@ -50,6 +50,9 @@
       </div>
     </div>
 
+    <a routerLink="/my-applications" class="btn-secondary admin-link">My Applications</a>
+    <a *ngIf="isApplicationAdmin" routerLink="/applications" class="btn-secondary admin-link">Application Search</a>
+
     <button type="button" class="btn-logout" (click)="logout()">Logout</button>
   </div>
 </div>

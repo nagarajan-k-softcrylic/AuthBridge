@@ -1,0 +1,228 @@
+// Styling follows the SAP UI5 "Standard Tile" pattern (see reference:
+// https://codepen.io/codesurj/pen/oGRQJj): flat white tiles on a light grey
+// page, icon top-left, status top-right, title + info text below.
+.search-page {
+  min-height: 100vh;
+  background: #f2f3f5;
+  padding: 2rem;
+  font-family: 'Segoe UI', system-ui, -apple-system, Roboto, sans-serif;
+}
+
+.search-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  max-width: 1040px;
+  margin: 0 auto 1.25rem;
+  padding-bottom: 0.9rem;
+  border-bottom: 1px solid #d9d9d9;
+
+  h1 {
+    color: #32363a;
+    font-size: 1.15rem;
+    font-weight: 700;
+    margin: 0;
+  }
+
+  .back-link {
+    color: #0854a0;
+    text-decoration: none;
+    font-size: 0.9rem;
+  }
+}
+
+.search-box {
+  max-width: 1040px;
+  margin: 0 auto 1.5rem;
+  display: flex;
+  gap: 0.5rem;
+
+  input {
+    flex: 1;
+    padding: 0.75rem 1rem;
+    border: 1px solid #d9d9d9;
+    border-radius: 4px;
+    font-size: 0.95rem;
+    background: #fff;
+  }
+}
+
+.assign-message {
+  max-width: 1040px;
+  margin: 0 auto 1rem;
+  color: #15803d;
+  font-weight: 600;
+}
+
+.tile-container {
+  max-width: 1040px;
+  margin: 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.standard-tile {
+  width: 176px;
+  min-height: 176px;
+  background: #fff;
+  border: 1px solid #d9d9d9;
+  border-radius: 2px;
+  padding: 0.9rem;
+  display: flex;
+  flex-direction: column;
+  transition: box-shadow 0.15s ease;
+
+  &:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  }
+
+  &.expanded {
+    width: 260px;
+  }
+}
+
+.tile-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+
+  .tile-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 4px;
+    object-fit: cover;
+
+    &.placeholder {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #f2f3f5;
+      color: #0854a0;
+      font-size: 1rem;
+      font-weight: 700;
+      border: 1px solid #d9d9d9;
+    }
+  }
+
+  .tile-status {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: #107e3e;
+    white-space: nowrap;
+
+    &.inactive {
+      color: #bb0000;
+    }
+  }
+}
+
+.tile-title {
+  margin: 0 0 0.25rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #32363a;
+}
+
+.tile-info {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #6a6d70;
+  flex-grow: 1;
+  overflow-wrap: anywhere;
+}
+
+.tile-footer {
+  margin-top: 0.5rem;
+  text-align: right;
+}
+
+.assign-form {
+  margin-top: 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+
+  input {
+    padding: 0.45rem 0.6rem;
+    border: 1px solid #d1d5db;
+    border-radius: 4px;
+    font-size: 0.8rem;
+  }
+
+  .assign-actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .error {
+    color: #bb0000;
+    font-size: 0.75rem;
+    margin: 0;
+  }
+}
+
+.btn-primary,
+.btn-secondary {
+  padding: 0.5rem 0.9rem;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-primary {
+  background: #0854a0;
+  color: #fff;
+}
+
+.btn-secondary {
+  background: #f2f3f5;
+  color: #32363a;
+}
+
+.btn-link {
+  background: none;
+  border: none;
+  color: #0854a0;
+  font-size: 0.8rem;
+  cursor: pointer;
+  padding: 0;
+}
+
+.empty {
+  background: #fff;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  padding: 2rem;
+  text-align: center;
+  color: #6a6d70;
+  width: 100%;
+}
+
+.pagination {
+  max-width: 1040px;
+  margin: 1.5rem auto 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  color: #32363a;
+
+  button {
+    padding: 0.5rem 1rem;
+    border: 1px solid #d9d9d9;
+    border-radius: 4px;
+    background: #fff;
+    color: #32363a;
+    cursor: pointer;
+    font-weight: 600;
+
+    &:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+  }
+}

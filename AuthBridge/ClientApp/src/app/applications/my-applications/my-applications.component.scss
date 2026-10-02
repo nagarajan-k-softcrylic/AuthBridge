@@ -1,0 +1,188 @@
+.my-apps-page {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #6a5bff 0%, #39c4ff 100%);
+  padding: 2rem;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+.my-apps-header {
+  max-width: 1200px;
+  margin: 0 auto 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  h1 {
+    color: #fff;
+    font-size: 1.75rem;
+    margin: 0;
+  }
+
+  .header-links {
+    display: flex;
+    gap: 1rem;
+  }
+
+  .header-link {
+    color: #fff;
+    text-decoration: none;
+    font-size: 0.9rem;
+    font-weight: 600;
+  }
+}
+
+.status,
+.empty {
+  max-width: 1200px;
+  margin: 0 auto;
+  background: #fff;
+  border-radius: 12px;
+  padding: 2rem;
+  text-align: center;
+  color: #6b7280;
+}
+
+.empty-note {
+  max-width: 1200px;
+  margin: 0 auto 1rem;
+  text-align: center;
+  color: #fff;
+  font-weight: 600;
+}
+
+.error {
+  max-width: 960px;
+  margin: 0 auto 1rem;
+  color: #fff;
+  font-weight: 600;
+}
+
+// Honeycomb of hexagon launch tiles, modeled on
+// https://codepen.io/joshhowenstine/pen/kWEKXg ("Hexagon Image Tiles with Hover Desc").
+// Each hexagon shows an icon/initial by default; hovering reveals the app name and a
+// "Launch" button over a dark overlay.
+$hex-width: 220px;
+$hex-height: $hex-width * 1.1547; // pointy-top hexagon aspect ratio
+$hex-gap: 20px;
+
+.honeycomb {
+  max-width: 1200px;
+  min-height: 60vh;
+  margin: 1rem auto 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.hex-row {
+  display: flex;
+  justify-content: center;
+
+  // Rows with more hexagons are naturally wider; centering every row (rather than offsetting
+  // by a fixed margin) reproduces the 3 / 4 / 3 honeycomb pyramid from the reference layout.
+  &:not(:first-child) {
+    margin-top: -($hex-height * 0.25);
+  }
+}
+
+.hexagon {
+  width: $hex-width;
+  margin: 0 ($hex-gap / 2);
+  flex-shrink: 0;
+}
+
+.hex1 {
+  width: 100%;
+  height: 100%;
+}
+
+.hex2 {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1.1547;
+  clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform 0.2s ease;
+
+  &:hover {
+    transform: scale(1.05);
+    z-index: 2;
+  }
+
+  // Empty slot: no app assigned to this honeycomb position yet.
+  &.hex-empty {
+    background: rgba(255, 255, 255, 0.15);
+    cursor: default;
+
+    &:hover {
+      transform: none;
+    }
+  }
+}
+
+.hex-face {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.2s ease;
+
+  .hex-initial {
+    color: #fff;
+    font-size: 3rem;
+    font-weight: 700;
+  }
+}
+
+.hex2:hover .hex-face {
+  opacity: 0;
+}
+
+.hex-desc {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.78);
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 0 18%;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+
+  h3 {
+    margin: 0 0 0.3rem;
+    font-size: 1.1rem;
+  }
+
+  p {
+    margin: 0 0 0.8rem;
+    font-size: 0.8rem;
+    opacity: 0.8;
+  }
+}
+
+.hex2:hover .hex-desc {
+  opacity: 1;
+}
+
+.btn-launch {
+  padding: 0.5rem 1.1rem;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  background: linear-gradient(135deg, #6a5bff, #39c4ff);
+  color: #fff;
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+}

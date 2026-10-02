@@ -1,13 +1,13 @@
 import { Component } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { AuthService, AuthUser } from '../auth.service';
 
 @Component({
   selector: 'app-home',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule],
+  imports: [CommonModule, ReactiveFormsModule, RouterLink],
   templateUrl: './home.component.html',
   styleUrl: './home.component.scss'
 })
@@ -29,6 +29,11 @@ export class HomeComponent {
     this.mfaEnableForm = this.fb.group({
       code: ['', [Validators.required]]
     });
+  }
+
+  /** True when the signed-in user holds the "ApplicationAdmin" role (shows the Application Search link). */
+  get isApplicationAdmin(): boolean {
+    return this.authService.isApplicationAdmin();
   }
 
   logout(): void {

@@ -60,7 +60,7 @@ export class LoginComponent {
     if (returnUrl) {
       window.location.href = returnUrl;
     } else {
-      this.router.navigateByUrl('/home');
+      this.router.navigateByUrl('/my-applications');
     }
   }
 
