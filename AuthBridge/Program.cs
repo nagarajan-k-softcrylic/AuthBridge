@@ -256,7 +256,7 @@ using (var seedScope = app.Services.CreateScope())
             Name = "Test Application App",
             Description = "Test application used for QA/testing purposes.",
             ApplicationCode = "TEST_APP",
-            ApplicationUrl = "https://testapp.example.com",
+            ApplicationUrl = "https://localhost:7299",
             IsActive = true,
             CreatedBy = "system-seed",
         },

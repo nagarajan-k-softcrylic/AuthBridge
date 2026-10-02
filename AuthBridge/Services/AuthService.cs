@@ -4,6 +4,7 @@ using AuthBridge.Configuration;
 using AuthBridge.Data;
 using AuthBridge.DTOs;
 using AuthBridge.Entities;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -91,6 +92,7 @@ public class AuthService : IAuthService
         // already signed in - without this, /connect/authorize keeps redirecting back to login
         // even after a successful Basic Authentication sign-in.
         await _signInManager.SignInAsync(user, isPersistent: true);
+        await SignInToIdentityServerCookieSchemeAsync(user);
 
         return await BuildSuccessResponseAsync(user);
     }
@@ -132,6 +134,7 @@ public class AuthService : IAuthService
         // already signed in - without this, /connect/authorize keeps redirecting back to login
         // even after a successful Basic Authentication sign-in.
         await _signInManager.SignInAsync(user, isPersistent: true);
+        await SignInToIdentityServerCookieSchemeAsync(user);
 
         return await BuildSuccessResponseAsync(user);
     }
@@ -327,6 +330,7 @@ public class AuthService : IAuthService
         // already signed in - without this, /connect/authorize keeps redirecting back to login
         // even after a successful Basic Authentication sign-in.
         await _signInManager.SignInAsync(user, isPersistent: true);
+        await SignInToIdentityServerCookieSchemeAsync(user);
 
         var response = await BuildSuccessResponseAsync(user);
 
@@ -345,6 +349,24 @@ public class AuthService : IAuthService
         }
 
         return response;
+    }
+
+    /// <summary>
+    /// Signs the user into the "Cookies" authentication scheme - the scheme Program.cs configures
+    /// as <c>AddAuthentication(...).DefaultScheme</c> and that Duende IdentityServer checks on
+    /// every interactive <c>/connect/authorize</c> request to decide whether the browser already
+    /// has an authenticated session. ASP.NET Core Identity's <see cref="SignInManager{TUser}.SignInAsync"/>
+    /// only establishes the separate "Identity.Application" cookie scheme, which IdentityServer
+    /// does NOT recognize here - without also signing into "Cookies", a Basic Authentication
+    /// login/register/MFA-verify never satisfies IdentityServer's interactive login check, causing
+    /// it to keep redirecting back to the login page in an infinite loop whenever a downstream
+    /// OIDC Relying Party (e.g. the Test Application App / RESUME_AI / REPORT_GEN clients) starts
+    /// an Authorization Code flow against this AuthBridge instance.
+    /// </summary>
+    private async Task SignInToIdentityServerCookieSchemeAsync(ApplicationUser user)
+    {
+        var principal = await _signInManager.CreateUserPrincipalAsync(user);
+        await _signInManager.Context.SignInAsync("Cookies", principal, new AuthenticationProperties { IsPersistent = true });
     }
 
     private async Task<bool> IsTrustedDeviceAsync(string userId, string? rawTrustedDeviceToken)

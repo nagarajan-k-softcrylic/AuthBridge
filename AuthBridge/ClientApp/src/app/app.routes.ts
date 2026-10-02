@@ -13,5 +13,9 @@ export const routes: Routes = [
   { path: 'home', component: HomeComponent, canActivate: [authGuard] },
   { path: 'my-applications', component: MyApplicationsComponent, canActivate: [authGuard] },
   { path: 'applications', component: ApplicationSearchComponent, canActivate: [applicationAdminGuard] },
+  // Angular preserves query params across a static redirectTo by default, so a server-side
+  // redirect to a non-SPA path like "/Account/Login?ReturnUrl=..." (IdentityServer's default
+  // interactive login redirect) still lands on the login form with the OIDC callback URL intact
+  // for navigateAfterLogin() to use.
   { path: '**', redirectTo: 'login' }
 ];
