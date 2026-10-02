@@ -2,6 +2,7 @@ using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi.Models;
 using ScimProvisioning.Api.Data;
 using ScimProvisioning.Api.Repositories;
 using ScimProvisioning.Api.Security;
@@ -11,7 +12,42 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(options =>
+{
+    // Lets Swagger UI show an "Authorize" button for both supported schemes, so endpoints
+    // secured with [Authorize(AuthenticationSchemes = "Bearer,ApiKey")] can be exercised
+    // directly from the browser instead of needing an external HTTP client.
+    options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Name = "Authorization",
+        Type = SecuritySchemeType.Http,
+        Scheme = "Bearer",
+        BearerFormat = "JWT",
+        In = ParameterLocation.Header,
+        Description = "AuthBridge-issued JWT access token.",
+    });
+
+    options.AddSecurityDefinition("ApiKey", new OpenApiSecurityScheme
+    {
+        Name = "X-Api-Key",
+        Type = SecuritySchemeType.ApiKey,
+        Scheme = "ApiKey",
+        In = ParameterLocation.Header,
+        Description = "Shared service-to-service API key (Security:ApiKey).",
+    });
+
+    options.AddSecurityRequirement(new OpenApiSecurityRequirement
+    {
+        {
+            new OpenApiSecurityScheme { Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" } },
+            Array.Empty<string>()
+        },
+        {
+            new OpenApiSecurityScheme { Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "ApiKey" } },
+            Array.Empty<string>()
+        },
+    });
+});
 
 // EF Core - owns the ScimApplications / ScimProvisioningLogs / ScimApplicationAssignments tables.
 // Deliberately a separate database from AuthBridge's: this service does not share AuthBridge's

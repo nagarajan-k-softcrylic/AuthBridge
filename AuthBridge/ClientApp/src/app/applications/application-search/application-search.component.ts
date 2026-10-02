@@ -2,6 +2,7 @@ import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
+import { forkJoin } from 'rxjs';
 import { ApplicationDto, ApplicationService } from '../application.service';
 
 @Component({
@@ -14,24 +15,24 @@ import { ApplicationDto, ApplicationService } from '../application.service';
 export class ApplicationSearchComponent implements OnInit {
   applications: ApplicationDto[] = [];
   searchTerm = '';
+
+  /** Loads the whole catalog in one page since every tile needs to be visible/selectable at once. */
   page = 1;
-  pageSize = 10;
+  pageSize = 100;
   totalCount = 0;
 
-  /** The application currently showing its inline "Assign User" email form, or null if none. */
-  assigningApplicationId: string | null = null;
+  /** Ids of applications currently selected via tile click (checkbox-style multi-select). */
+  selectedApplicationIds = new Set<string>();
+
   assignEmail = '';
   assignMessage: string | null = null;
   assignError: string | null = null;
+  assigning = false;
 
   constructor(private applicationService: ApplicationService, private router: Router) {}
 
   ngOnInit(): void {
     this.loadApplications();
-  }
-
-  get totalPages(): number {
-    return Math.max(1, Math.ceil(this.totalCount / this.pageSize));
   }
 
   loadApplications(): void {
@@ -49,44 +50,56 @@ export class ApplicationSearchComponent implements OnInit {
   }
 
   onSearch(): void {
-    this.page = 1;
     this.loadApplications();
   }
 
-  goToPage(page: number): void {
-    if (page < 1 || page > this.totalPages) {
-      return;
+  isSelected(applicationId: string): boolean {
+    return this.selectedApplicationIds.has(applicationId);
+  }
+
+  /** Clicking a tile toggles its selection checkbox. */
+  toggleSelection(applicationId: string): void {
+    if (this.selectedApplicationIds.has(applicationId)) {
+      this.selectedApplicationIds.delete(applicationId);
+    } else {
+      this.selectedApplicationIds.add(applicationId);
     }
 
-    this.page = page;
-    this.loadApplications();
+    this.assignMessage = null;
+    this.assignError = null;
   }
 
-  startAssign(applicationId: string): void {
-    this.assigningApplicationId = applicationId;
+  clearSelection(): void {
+    this.selectedApplicationIds.clear();
     this.assignEmail = '';
     this.assignMessage = null;
     this.assignError = null;
   }
 
-  cancelAssign(): void {
-    this.assigningApplicationId = null;
-  }
-
-  confirmAssign(applicationId: string): void {
-    if (!this.assignEmail) {
+  /** Assigns every selected application to the entered user's email. */
+  confirmAssign(): void {
+    if (!this.assignEmail || this.selectedApplicationIds.size === 0) {
       return;
     }
 
     this.assignError = null;
-    this.applicationService.assignByEmail({ email: this.assignEmail, applicationId }).subscribe({
+    this.assigning = true;
+
+    const requests = Array.from(this.selectedApplicationIds).map((applicationId) =>
+      this.applicationService.assignByEmail({ email: this.assignEmail, applicationId })
+    );
+
+    forkJoin(requests).subscribe({
       next: () => {
-        this.assignMessage = `Access granted to ${this.assignEmail}.`;
-        this.assigningApplicationId = null;
+        this.assignMessage = `Access granted to ${this.assignEmail} for ${requests.length} application(s).`;
+        this.assigning = false;
+        this.selectedApplicationIds.clear();
+        this.assignEmail = '';
         this.loadApplications();
       },
       error: (err) => {
-        this.assignError = err?.error?.message ?? 'Unable to assign application.';
+        this.assignError = err?.error?.message ?? 'Unable to assign one or more applications.';
+        this.assigning = false;
       }
     });
   }

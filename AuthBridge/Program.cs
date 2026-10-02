@@ -236,6 +236,7 @@ using (var seedScope = app.Services.CreateScope())
 {
     var seedDbContext = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
     var seedUserManager = seedScope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+    var seedRoleManager = seedScope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
 
     var seedApplications = new[]
     {
@@ -282,6 +283,19 @@ using (var seedScope = app.Services.CreateScope())
     var seedTargetUser = await seedUserManager.FindByEmailAsync("nagavjm@gmail.com");
     if (seedTargetUser is not null)
     {
+        // Grants the ApplicationAdmin role so this seeded test account can reach /applications
+        // (Application Search) in the Angular UI - the role previously only existed in guard/
+        // policy checks but was never created or assigned to any user.
+        if (!await seedRoleManager.RoleExistsAsync("ApplicationAdmin"))
+        {
+            await seedRoleManager.CreateAsync(new IdentityRole("ApplicationAdmin"));
+        }
+
+        if (!await seedUserManager.IsInRoleAsync(seedTargetUser, "ApplicationAdmin"))
+        {
+            await seedUserManager.AddToRoleAsync(seedTargetUser, "ApplicationAdmin");
+        }
+
         var catalogApps = await seedDbContext.Applications
             .Where(a => new[] { "RESUME_AI", "REPORT_GEN", "TEST_APP" }.Contains(a.ApplicationCode))
             .ToListAsync();

@@ -63,7 +63,10 @@ public class ScimProvisioningService : IScimProvisioningService
             Emails = new List<ScimEmail> { new() { Value = request.UserName, Primary = true } },
         };
 
-        var (success, responseBody, externalId, error) = await SendAsync(app, HttpMethod.Post, "Users", scimUser);
+        // applicationId is appended so this call also works when BaseUrl points back at this
+        // server's own /scim/v2/Users endpoint for local self-testing (ScimUsersController.Create
+        // requires it); real downstream SCIM targets ignore unknown query parameters.
+        var (success, responseBody, externalId, error) = await SendAsync(app, HttpMethod.Post, $"Users?applicationId={app.Id}", scimUser);
 
         await LogAsync(app.Id, request.UserId, ScimOperationType.CreateUser, scimUser, responseBody, success, error, request.CorrelationId);
 
@@ -253,6 +256,10 @@ public class ScimProvisioningService : IScimProvisioningService
             var client = _httpClientFactory.CreateClient("ScimDownstream");
             var request = new HttpRequestMessage(method, $"{app.BaseUrl.TrimEnd('/')}/{relativePath}");
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", app.AccessToken);
+            // Also send as X-Api-Key so this call can authenticate against ApiKeyAuthenticationHandler
+            // (used when BaseUrl points back at this server's own /scim/v2 endpoints for self-testing)
+            // without affecting real downstream apps that only check the Bearer header.
+            request.Headers.TryAddWithoutValidation("X-Api-Key", app.AccessToken);
             if (json is not null)
             {
                 request.Content = new StringContent(json, System.Text.Encoding.UTF8, "application/scim+json");

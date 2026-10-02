@@ -14,7 +14,7 @@ namespace ScimProvisioning.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("scim/v2/Users")]
-[Authorize(AuthenticationSchemes = "Bearer")]
+[Authorize(AuthenticationSchemes = "Bearer,ApiKey")]
 [Produces("application/scim+json")]
 public class ScimUsersController : ControllerBase
 {
@@ -67,6 +67,17 @@ public class ScimUsersController : ControllerBase
     [HttpPost]
     public async Task<ActionResult<ScimUser>> Create([FromBody] ScimUser user, [FromQuery] Guid applicationId)
     {
+        if (applicationId == Guid.Empty)
+        {
+            return BadRequest(new ScimError { Status = "400", Detail = "applicationId query parameter is required." });
+        }
+
+        var applicationExists = await _db.ScimApplications.AnyAsync(a => a.Id == applicationId);
+        if (!applicationExists)
+        {
+            return NotFound(new ScimError { Status = "404", Detail = $"No ScimApplication found with id '{applicationId}'." });
+        }
+
         var assignment = new Entities.ScimApplicationAssignment
         {
             ApplicationId = applicationId,
