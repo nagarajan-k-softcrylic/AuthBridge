@@ -103,6 +103,12 @@ public static class IdentityServerConfig
 
             AllowedScopes = { "openid", "profile", "application_access" },
             AllowAccessTokensViaBrowser = true,
+
+            // Ensures the "app_access" claim(s) added by ApplicationProfileService are embedded
+            // directly in the id_token, not only retrievable via /connect/userinfo. Downstream
+            // catalog apps (e.g. SmartHire) that only parse the id_token after the code/token
+            // exchange (and don't separately call /connect/userinfo) still see app_access.
+            AlwaysIncludeUserClaimsInIdToken = true,
         };
     }
 }
