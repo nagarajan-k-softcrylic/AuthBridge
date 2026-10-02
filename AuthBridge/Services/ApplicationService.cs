@@ -10,15 +10,18 @@ public class ApplicationService : IApplicationService
     private readonly IApplicationRepository _applicationRepository;
     private readonly IUserApplicationRepository _userApplicationRepository;
     private readonly UserManager<ApplicationUser> _userManager;
+    private readonly IScimNotificationService _scimNotificationService;
 
     public ApplicationService(
         IApplicationRepository applicationRepository,
         IUserApplicationRepository userApplicationRepository,
-        UserManager<ApplicationUser> userManager)
+        UserManager<ApplicationUser> userManager,
+        IScimNotificationService scimNotificationService)
     {
         _applicationRepository = applicationRepository;
         _userApplicationRepository = userApplicationRepository;
         _userManager = userManager;
+        _scimNotificationService = scimNotificationService;
     }
 
     public async Task<PagedResult<ApplicationDto>> SearchAsync(string? searchTerm, int page, int pageSize, string? currentUserId = null)
@@ -121,6 +124,8 @@ public class ApplicationService : IApplicationService
         var user = await _userManager.FindByIdAsync(request.UserId)
             ?? throw new InvalidOperationException("User not found.");
 
+        var roles = await _userManager.GetRolesAsync(user);
+
         var existing = await _userApplicationRepository.GetAsync(request.UserId, request.ApplicationId);
         if (existing is not null)
         {
@@ -131,6 +136,7 @@ public class ApplicationService : IApplicationService
             existing.RevokedBy = null;
             _userApplicationRepository.Update(existing);
             await _userApplicationRepository.SaveChangesAsync();
+            await NotifyAssignedAsync(app, user, roles);
             return ToUserApplicationDto(existing, app, user);
         }
 
@@ -144,9 +150,17 @@ public class ApplicationService : IApplicationService
 
         await _userApplicationRepository.AddAsync(userApp);
         await _userApplicationRepository.SaveChangesAsync();
+        await NotifyAssignedAsync(app, user, roles);
 
         return ToUserApplicationDto(userApp, app, user);
     }
+
+    /// <summary>SCIM trigger: "Application Assigned" - creates the user (and roles/groups) in the
+    /// target application. Only fired here (and in <see cref="AssignByEmailAsync"/> via this
+    /// method) - never on user creation/login/logout/password/MFA/refresh.</summary>
+    private Task NotifyAssignedAsync(Application app, ApplicationUser user, IList<string> roles) =>
+        _scimNotificationService.NotifyApplicationAssignedAsync(
+            app.ApplicationCode, user.Id, user.Email ?? user.UserName ?? user.Id, user.FirstName, user.LastName, roles.ToList());
 
     public async Task<UserApplicationDto> AssignByEmailAsync(AssignApplicationByEmailDto request, string assignedBy)
     {
@@ -170,6 +184,15 @@ public class ApplicationService : IApplicationService
 
         _userApplicationRepository.Update(existing);
         await _userApplicationRepository.SaveChangesAsync();
+
+        // SCIM trigger: "Application Revoked" - disables the user in this application only; the
+        // user remains active in every other application they're still assigned to.
+        var app = await _applicationRepository.GetByIdAsync(request.ApplicationId);
+        if (app is not null)
+        {
+            await _scimNotificationService.NotifyApplicationRevokedAsync(app.ApplicationCode, request.UserId);
+        }
+
         return true;
     }
 

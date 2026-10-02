@@ -49,6 +49,12 @@ builder.Services.AddScoped<IUserApplicationRepository, UserApplicationRepository
 builder.Services.AddScoped<IApplicationService, ApplicationService>();
 builder.Services.AddScoped<IApplicationAccessService, ApplicationAccessService>();
 
+// Outbound notifications to the standalone SCIM Provisioning Server (ScimProvisioning.Api),
+// fired ONLY from application assign/revoke (and future profile/role update) flows above -
+// never from registration, login, logout, password, MFA, or refresh-token flows.
+builder.Services.AddHttpClient("ScimProvisioning");
+builder.Services.AddScoped<IScimNotificationService, ScimNotificationService>();
+
 // Read once up-front so both the "Identity.Application" and "Cookies" schemes below can be
 // aligned with the JWT refresh token's lifetime (RefreshTokenDays).
 var jwtSettings = builder.Configuration.GetSection(JwtSettings.SectionName).Get<JwtSettings>() ?? new JwtSettings();
