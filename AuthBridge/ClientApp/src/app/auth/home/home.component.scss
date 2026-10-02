@@ -60,6 +60,88 @@ h1 {
   }
 }
 
+.mfa-section {
+  margin-bottom: 1.75rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid #e5e7eb;
+
+  h2 {
+    font-size: 1.05rem;
+    color: #1f2937;
+    margin: 1rem 0 0.75rem;
+  }
+
+  .mfa-message {
+    color: #15803d;
+    font-size: 0.85rem;
+  }
+
+  .error {
+    color: #dc2626;
+    font-size: 0.85rem;
+  }
+
+  .mfa-uri {
+    word-break: break-all;
+    font-size: 0.8rem;
+    color: #6b7280;
+  }
+
+  .mfa-qr {
+    display: block;
+    margin: 0.75rem 0;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 0.5rem;
+    background: #fff;
+  }
+
+  .form-group {
+    margin-bottom: 0.75rem;
+
+    label {
+      display: block;
+      font-size: 0.85rem;
+      color: #374151;
+      margin-bottom: 0.25rem;
+    }
+
+    input {
+      width: 100%;
+      padding: 0.6rem 0.75rem;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      font-size: 0.95rem;
+    }
+  }
+}
+
+.mfa-actions {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.btn-primary,
+.btn-secondary {
+  padding: 0.6rem 1rem;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  margin-right: 0.5rem;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #6a5bff, #39c4ff);
+  color: #fff;
+}
+
+.btn-secondary {
+  background: #f3f4f6;
+  color: #1f2937;
+}
+
 .btn-logout {
   width: 100%;
   padding: 0.8rem;

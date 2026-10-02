@@ -31,6 +31,7 @@ public class TokenService : ITokenService
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
             new("firstName", user.FirstName ?? string.Empty),
             new("lastName", user.LastName ?? string.Empty),
+            new("mfaEnabled", user.MfaEnabled ? "true" : "false"),
         };
 
         claims.AddRange(roles.Select(role => new Claim(ClaimTypes.Role, role)));

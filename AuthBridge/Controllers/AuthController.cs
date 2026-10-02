@@ -13,6 +13,7 @@ public class AuthController : ControllerBase
 {
     private const string AuthCookieName = "authbridge_token";
     private const string RefreshCookieName = "authbridge_refresh_token";
+    private const string TrustedDeviceCookieName = "authbridge_trusted_device";
 
     private readonly IAuthService _authService;
     private readonly IConfiguration _configuration;
@@ -120,7 +121,8 @@ public class AuthController : ControllerBase
             return ValidationProblem(ModelState);
         }
 
-        var result = await _authService.LoginAsync(request);
+        Request.Cookies.TryGetValue(TrustedDeviceCookieName, out var trustedDeviceToken);
+        var result = await _authService.LoginAsync(request, trustedDeviceToken);
 
         if (!result.Succeeded)
         {
@@ -128,6 +130,87 @@ public class AuthController : ControllerBase
         }
 
         SetAuthCookies(result);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Completes a login that returned <c>RequiresMfa = true</c>: validates the TOTP code from
+    /// the user's authenticator app and, if valid, issues the normal JWT/refresh-token cookies.
+    /// Anonymous because the user isn't fully signed in yet at this point in the flow.
+    /// </summary>
+    [HttpPost("mfa/verify")]
+    public async Task<ActionResult<AuthResponseDto>> MfaVerify([FromBody] MfaVerifyRequestDto request)
+    {
+        var result = await _authService.VerifyMfaAsync(request.UserId, request.Code, request.RememberDevice);
+
+        if (!result.Succeeded)
+        {
+            return Unauthorized(result);
+        }
+
+        SetAuthCookies(result);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Generates (or reuses) the current user's TOTP shared key and otpauth:// URI so they can
+    /// add the account to an authenticator app (Google Authenticator, Microsoft Authenticator,
+    /// etc.) as the first step of enabling MFA.
+    /// </summary>
+    [Authorize(AuthenticationSchemes = "Bearer")]
+    [HttpGet("mfa/setup")]
+    public async Task<ActionResult<MfaSetupDto>> MfaSetup()
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
+        if (string.IsNullOrEmpty(userId))
+        {
+            return Unauthorized();
+        }
+
+        return Ok(await _authService.GetMfaSetupAsync(userId));
+    }
+
+    /// <summary>
+    /// Confirms MFA setup by validating a code generated from the authenticator app configured
+    /// via <see cref="MfaSetup"/>. On success, MFA is turned on for the account.
+    /// </summary>
+    [Authorize(AuthenticationSchemes = "Bearer")]
+    [HttpPost("mfa/enable")]
+    public async Task<ActionResult<AuthResponseDto>> MfaEnable([FromBody] MfaEnableRequestDto request)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
+        if (string.IsNullOrEmpty(userId))
+        {
+            return Unauthorized();
+        }
+
+        var result = await _authService.EnableMfaAsync(userId, request.Code);
+        if (!result.Succeeded)
+        {
+            return BadRequest(result);
+        }
+
+        return Ok(result);
+    }
+
+    /// <summary>Turns off MFA for the current user.</summary>
+    [Authorize(AuthenticationSchemes = "Bearer")]
+    [HttpPost("mfa/disable")]
+    public async Task<ActionResult<AuthResponseDto>> MfaDisable()
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
+        if (string.IsNullOrEmpty(userId))
+        {
+            return Unauthorized();
+        }
+
+        var result = await _authService.DisableMfaAsync(userId);
+        if (!result.Succeeded)
+        {
+            return BadRequest(result);
+        }
+
+        DeleteTrustedDeviceCookie();
         return Ok(result);
     }
 
@@ -195,6 +278,7 @@ public class AuthController : ControllerBase
             Email = User.FindFirstValue(ClaimTypes.Email) ?? User.FindFirstValue("email"),
             FirstName = User.FindFirstValue("firstName"),
             LastName = User.FindFirstValue("lastName"),
+            MfaEnabled = bool.TryParse(User.FindFirstValue("mfaEnabled"), out var mfaEnabled) && mfaEnabled,
         });
     }
 
@@ -288,13 +372,37 @@ public class AuthController : ControllerBase
             });
         }
 
+        if (!string.IsNullOrEmpty(result.TrustedDeviceToken))
+        {
+            // Scoped to the login endpoint only - it's read solely by LoginAsync to decide
+            // whether the MFA prompt can be skipped on this device.
+            Response.Cookies.Append(TrustedDeviceCookieName, result.TrustedDeviceToken, new CookieOptions
+            {
+                HttpOnly = true,
+                Secure = true,
+                SameSite = SameSiteMode.Strict,
+                Expires = DateTime.UtcNow.AddDays(7),
+                Path = "/api/auth",
+            });
+        }
+
         result.Token = null;
         result.RefreshToken = null;
+        result.TrustedDeviceToken = null;
     }
 
     private void DeleteAuthCookies()
     {
         Response.Cookies.Delete(AuthCookieName, new CookieOptions { Path = "/" });
         Response.Cookies.Delete(RefreshCookieName, new CookieOptions { Path = "/api/auth" });
+    }
+
+    // Intentionally not cleared by DeleteAuthCookies: the whole point of "remember this device"
+    // is that it survives logout/refresh-failures so the next login on this device can still skip
+    // the MFA prompt until the 7-day window naturally expires. Only an explicit MFA disable
+    // revokes it (see AuthService.DisableMfaAsync).
+    private void DeleteTrustedDeviceCookie()
+    {
+        Response.Cookies.Delete(TrustedDeviceCookieName, new CookieOptions { Path = "/api/auth" });
     }
 }

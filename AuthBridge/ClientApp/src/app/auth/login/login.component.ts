@@ -14,10 +14,13 @@ import { AuthService } from '../auth.service';
 export class LoginComponent {
   form: FormGroup;
   ssoForm: FormGroup;
+  mfaForm: FormGroup;
   submitting = false;
   errorMessage: string | null = null;
   authMode: 'basic' | 'sso' = 'basic';
   ssoEnabled = false;
+  mfaPending = false;
+  private mfaUserId: string | null = null;
 
   constructor(
     private fb: FormBuilder,
@@ -32,6 +35,11 @@ export class LoginComponent {
 
     this.ssoForm = this.fb.group({
       email: ['', [Validators.required, Validators.email]]
+    });
+
+    this.mfaForm = this.fb.group({
+      code: ['', [Validators.required]],
+      rememberDevice: [false]
     });
 
     this.authService.getAuthOptions().subscribe({
@@ -83,7 +91,10 @@ export class LoginComponent {
     this.authService.login(this.form.value).subscribe({
       next: (res) => {
         this.submitting = false;
-        if (res.succeeded) {
+        if (res.requiresMfa) {
+          this.mfaPending = true;
+          this.mfaUserId = res.userId ?? null;
+        } else if (res.succeeded) {
           this.navigateAfterLogin();
         } else {
           this.errorMessage = res.errors?.[0] ?? 'Login failed.';
@@ -94,5 +105,36 @@ export class LoginComponent {
         this.errorMessage = err?.error?.errors?.[0] ?? 'Invalid email or password.';
       }
     });
+  }
+
+  onMfaSubmit(): void {
+    if (this.mfaForm.invalid || !this.mfaUserId) {
+      this.mfaForm.markAllAsTouched();
+      return;
+    }
+
+    this.errorMessage = null;
+    this.submitting = true;
+
+    this.authService
+      .verifyMfa({
+        userId: this.mfaUserId,
+        code: this.mfaForm.value.code,
+        rememberDevice: this.mfaForm.value.rememberDevice
+      })
+      .subscribe({
+        next: (res) => {
+          this.submitting = false;
+          if (res.succeeded) {
+            this.navigateAfterLogin();
+          } else {
+            this.errorMessage = res.errors?.[0] ?? 'Verification failed.';
+          }
+        },
+        error: (err) => {
+          this.submitting = false;
+          this.errorMessage = err?.error?.errors?.[0] ?? 'Invalid verification code.';
+        }
+      });
   }
 }

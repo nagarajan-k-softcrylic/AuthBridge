@@ -1,3 +1,5 @@
+using System.Text;
+using System.Text.Encodings.Web;
 using AuthBridge.Configuration;
 using AuthBridge.Data;
 using AuthBridge.DTOs;
@@ -16,6 +18,8 @@ namespace AuthBridge.Services;
 public class AuthService : IAuthService
 {
     public const string DefaultRole = "User";
+    private const string MfaIssuer = "AuthBridge";
+    private const int MfaTrustedDeviceDays = 7;
 
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly SignInManager<ApplicationUser> _signInManager;
@@ -91,7 +95,7 @@ public class AuthService : IAuthService
         return await BuildSuccessResponseAsync(user);
     }
 
-    public async Task<AuthResponseDto> LoginAsync(LoginRequestDto request)
+    public async Task<AuthResponseDto> LoginAsync(LoginRequestDto request, string? trustedDeviceToken = null)
     {
         var user = await _userManager.FindByEmailAsync(request.Email);
         if (user is null)
@@ -115,9 +119,11 @@ public class AuthService : IAuthService
             return new AuthResponseDto { Succeeded = false, Errors = { "Invalid email or password." } };
         }
 
-        if (user.MfaEnabled)
+        if (user.MfaEnabled && !await IsTrustedDeviceAsync(user.Id, trustedDeviceToken))
         {
-            // TODO: integrate MFA verification step (e.g. TOTP/SMS) before issuing the access token.
+            // Password check passed, but the account requires a second factor. No tokens are
+            // issued yet - the client must call POST /api/auth/mfa/verify with a valid TOTP code
+            // (see VerifyMfaAsync) before a session is established.
             return new AuthResponseDto { Succeeded = true, RequiresMfa = true, UserId = user.Id, Email = user.Email };
         }
 
@@ -226,6 +232,163 @@ public class AuthService : IAuthService
         return await BuildSuccessResponseAsync(user);
     }
 
+    public async Task<MfaSetupDto> GetMfaSetupAsync(string userId)
+    {
+        var user = await _userManager.FindByIdAsync(userId);
+        if (user is null)
+        {
+            return new MfaSetupDto();
+        }
+
+        var unformattedKey = await _userManager.GetAuthenticatorKeyAsync(user);
+        if (string.IsNullOrEmpty(unformattedKey))
+        {
+            await _userManager.ResetAuthenticatorKeyAsync(user);
+            unformattedKey = await _userManager.GetAuthenticatorKeyAsync(user);
+        }
+
+        return new MfaSetupDto
+        {
+            SharedKey = FormatKeyForDisplay(unformattedKey!),
+            AuthenticatorUri = GenerateAuthenticatorUri(user.Email ?? user.UserName ?? user.Id, unformattedKey!),
+        };
+    }
+
+    public async Task<AuthResponseDto> EnableMfaAsync(string userId, string code)
+    {
+        var user = await _userManager.FindByIdAsync(userId);
+        if (user is null)
+        {
+            return new AuthResponseDto { Succeeded = false, Errors = { "User not found." } };
+        }
+
+        var isValid = await _userManager.VerifyTwoFactorTokenAsync(
+            user, _userManager.Options.Tokens.AuthenticatorTokenProvider, code);
+
+        if (!isValid)
+        {
+            return new AuthResponseDto { Succeeded = false, Errors = { "Invalid verification code." } };
+        }
+
+        user.MfaEnabled = true;
+        await _userManager.SetTwoFactorEnabledAsync(user, true);
+        await _userManager.UpdateAsync(user);
+
+        _logger.LogInformation("MFA enabled for user: {Email}", user.Email);
+
+        return new AuthResponseDto { Succeeded = true, UserId = user.Id, Email = user.Email, MfaEnabled = true };
+    }
+
+    public async Task<AuthResponseDto> DisableMfaAsync(string userId)
+    {
+        var user = await _userManager.FindByIdAsync(userId);
+        if (user is null)
+        {
+            return new AuthResponseDto { Succeeded = false, Errors = { "User not found." } };
+        }
+
+        user.MfaEnabled = false;
+        await _userManager.SetTwoFactorEnabledAsync(user, false);
+        await _userManager.ResetAuthenticatorKeyAsync(user);
+        await _userManager.UpdateAsync(user);
+
+        // Trusting a device only makes sense while MFA is on; drop any remembered devices.
+        var trustedDevices = await _dbContext.MfaTrustedDevices.Where(d => d.UserId == user.Id).ToListAsync();
+        if (trustedDevices.Count > 0)
+        {
+            _dbContext.MfaTrustedDevices.RemoveRange(trustedDevices);
+        }
+
+        await _dbContext.SaveChangesAsync();
+
+        _logger.LogInformation("MFA disabled for user: {Email}", user.Email);
+
+        return new AuthResponseDto { Succeeded = true, UserId = user.Id, Email = user.Email, MfaEnabled = false };
+    }
+
+    public async Task<AuthResponseDto> VerifyMfaAsync(string userId, string code, bool rememberDevice = false)
+    {
+        var user = await _userManager.FindByIdAsync(userId);
+        if (user is null || !user.MfaEnabled)
+        {
+            return new AuthResponseDto { Succeeded = false, Errors = { "Invalid request." } };
+        }
+
+        var isValid = await _userManager.VerifyTwoFactorTokenAsync(
+            user, _userManager.Options.Tokens.AuthenticatorTokenProvider, code);
+
+        if (!isValid)
+        {
+            return new AuthResponseDto { Succeeded = false, Errors = { "Invalid verification code." } };
+        }
+
+        // Establishes the "Identity.Application" cookie alongside the JWT so the interactive
+        // OIDC/IdentityServer flow (which challenges that cookie scheme) recognizes the user as
+        // already signed in - without this, /connect/authorize keeps redirecting back to login
+        // even after a successful Basic Authentication sign-in.
+        await _signInManager.SignInAsync(user, isPersistent: true);
+
+        var response = await BuildSuccessResponseAsync(user);
+
+        if (rememberDevice)
+        {
+            var rawTrustedDeviceToken = _tokenService.GenerateRefreshToken();
+            _dbContext.MfaTrustedDevices.Add(new MfaTrustedDevice
+            {
+                UserId = user.Id,
+                TokenHash = _tokenService.HashRefreshToken(rawTrustedDeviceToken),
+                ExpiresAtUtc = DateTime.UtcNow.AddDays(MfaTrustedDeviceDays),
+            });
+            await _dbContext.SaveChangesAsync();
+
+            response.TrustedDeviceToken = rawTrustedDeviceToken;
+        }
+
+        return response;
+    }
+
+    private async Task<bool> IsTrustedDeviceAsync(string userId, string? rawTrustedDeviceToken)
+    {
+        if (string.IsNullOrWhiteSpace(rawTrustedDeviceToken))
+        {
+            return false;
+        }
+
+        var tokenHash = _tokenService.HashRefreshToken(rawTrustedDeviceToken);
+        var device = await _dbContext.MfaTrustedDevices
+            .FirstOrDefaultAsync(d => d.UserId == userId && d.TokenHash == tokenHash);
+
+        return device is not null && device.IsActive;
+    }
+
+    private static string FormatKeyForDisplay(string unformattedKey)
+    {
+        var result = new StringBuilder();
+        var currentPosition = 0;
+        while (currentPosition + 4 < unformattedKey.Length)
+        {
+            result.Append(unformattedKey.AsSpan(currentPosition, 4)).Append(' ');
+            currentPosition += 4;
+        }
+
+        if (currentPosition < unformattedKey.Length)
+        {
+            result.Append(unformattedKey.AsSpan(currentPosition));
+        }
+
+        return result.ToString().ToUpperInvariant();
+    }
+
+    private static string GenerateAuthenticatorUri(string accountLabel, string unformattedKey)
+    {
+        const string format = "otpauth://totp/{0}:{1}?secret={2}&issuer={0}&digits=6";
+        return string.Format(
+            format,
+            UrlEncoder.Default.Encode(MfaIssuer),
+            UrlEncoder.Default.Encode(accountLabel),
+            unformattedKey);
+    }
+
     private async Task<AuthResponseDto> BuildSuccessResponseAsync(ApplicationUser user)
     {
         var roles = await _userManager.GetRolesAsync(user);
@@ -253,6 +416,7 @@ public class AuthService : IAuthService
             Email = user.Email,
             FirstName = user.FirstName,
             LastName = user.LastName,
+            MfaEnabled = user.MfaEnabled,
         };
     }
 }

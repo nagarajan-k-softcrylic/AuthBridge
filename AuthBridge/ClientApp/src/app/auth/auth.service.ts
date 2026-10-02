@@ -24,6 +24,7 @@ export interface AuthResponse {
   firstName?: string;
   lastName?: string;
   requiresMfa: boolean;
+  mfaEnabled?: boolean;
   errors: string[];
 }
 
@@ -31,11 +32,24 @@ export interface AuthOptions {
   ssoEnabled: boolean;
 }
 
+export interface MfaVerifyRequest {
+  userId: string;
+  code: string;
+  /** If true, this device skips the MFA prompt on future logins for 7 days. */
+  rememberDevice?: boolean;
+}
+
+export interface MfaSetup {
+  sharedKey: string;
+  authenticatorUri: string;
+}
+
 export interface AuthUser {
   userId: string;
   email: string;
   firstName: string;
   lastName: string;
+  mfaEnabled: boolean;
 }
 
 /**
@@ -93,6 +107,28 @@ export class AuthService {
     return this.http.get<AuthOptions>(`${this.baseUrl}/options`);
   }
 
+  /** Completes a login that returned requiresMfa = true, using a code from the authenticator app. */
+  verifyMfa(request: MfaVerifyRequest): Observable<AuthResponse> {
+    return this.http
+      .post<AuthResponse>(`${this.baseUrl}/mfa/verify`, request, { withCredentials: true })
+      .pipe(tap((res) => this.cacheUser(res)));
+  }
+
+  /** Starts MFA setup for the signed-in user: returns the shared key + otpauth URI to add to an authenticator app. */
+  getMfaSetup(): Observable<MfaSetup> {
+    return this.http.get<MfaSetup>(`${this.baseUrl}/mfa/setup`, { withCredentials: true });
+  }
+
+  /** Confirms MFA setup with a code generated from the authenticator app, turning MFA on. */
+  enableMfa(code: string): Observable<AuthResponse> {
+    return this.http.post<AuthResponse>(`${this.baseUrl}/mfa/enable`, { code }, { withCredentials: true });
+  }
+
+  /** Turns MFA off for the signed-in user. */
+  disableMfa(): Observable<AuthResponse> {
+    return this.http.post<AuthResponse>(`${this.baseUrl}/mfa/disable`, {}, { withCredentials: true });
+  }
+
   /**
    * Standalone SSO login: full-page redirect into the Microsoft Entra ID Authorization Code
    * flow. The optional email is passed through as a `login_hint` so Microsoft's login page
@@ -128,7 +164,8 @@ export class AuthService {
         userId: res.userId ?? '',
         email: res.email ?? '',
         firstName: res.firstName ?? '',
-        lastName: res.lastName ?? ''
+        lastName: res.lastName ?? '',
+        mfaEnabled: res.mfaEnabled ?? false
       };
     }
   }
