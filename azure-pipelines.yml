@@ -8,7 +8,6 @@ pool:
 
 variables:
   buildConfiguration: 'Release'
-  projects: '**/AuthBridge.csproj; **/ScimProvisioning.Api.csproj'
 
 stages:
   - stage: Build
@@ -30,13 +29,17 @@ stages:
             displayName: 'Restore'
             inputs:
               command: 'restore'
-              projects: '$(projects)'
+              projects: |
+                AuthBridge/AuthBridge.csproj
+                ScimProvisioning.Api/ScimProvisioning.Api.csproj
 
           - task: DotNetCoreCLI@2
             displayName: 'Build'
             inputs:
               command: 'build'
-              projects: '$(projects)'
+              projects: |
+                AuthBridge/AuthBridge.csproj
+                ScimProvisioning.Api/ScimProvisioning.Api.csproj
               arguments: '--configuration $(buildConfiguration) --no-restore'
 
           # Add/enable this once unit test projects exist in the solution.
