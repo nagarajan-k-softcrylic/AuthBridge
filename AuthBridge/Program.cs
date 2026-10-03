@@ -25,6 +25,12 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+// Wires up the App Insights SDK so requests/traces/exceptions actually get sent using the
+// ApplicationInsights__ConnectionString app setting - without this call, that setting is inert
+// and nothing is captured (confirmed: zero telemetry was ever recorded despite the setting
+// being present).
+builder.Services.AddApplicationInsightsTelemetry();
+
 // EF Core - backs the authentication/registration (ASP.NET Core Identity) tables in SQL Server.
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));

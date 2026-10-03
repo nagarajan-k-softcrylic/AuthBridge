@@ -12,6 +12,12 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
+
+// Wires up the App Insights SDK so requests/traces/exceptions actually get sent using the
+// ApplicationInsights__ConnectionString app setting - without this call, that setting is inert
+// and nothing is captured (confirmed: zero telemetry was ever recorded despite the setting
+// being present).
+builder.Services.AddApplicationInsightsTelemetry();
 builder.Services.AddSwaggerGen(options =>
 {
     // Lets Swagger UI show an "Authorize" button for both supported schemes, so endpoints
